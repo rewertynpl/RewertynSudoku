@@ -246,6 +246,7 @@ struct GenerateRunConfig {
     std::string benchmark_output_file = "plikiTMP/porownanie.txt";
     std::string output_folder = "generated_sudoku_files";
     std::string output_file = "generated_sudoku.txt";
+    bool force_new_seed_per_attempt = true; // Zaznacz jako domyślnie włączone
 };
 
 struct GenerateRunResult {

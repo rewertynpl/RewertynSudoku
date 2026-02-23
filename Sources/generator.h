@@ -1913,6 +1913,7 @@ GenerateRunResult run_generic_sudoku(
         " max_clues=" + std::to_string(runtime_cfg.max_clues) +
         " attempt_time_budget_s=" + format_fixed(runtime_cfg.attempt_time_budget_s, 3) +
         " attempt_node_budget=" + std::to_string(runtime_cfg.attempt_node_budget) +
+        " force_new_seed_per_attempt=" + std::string(runtime_cfg.force_new_seed_per_attempt ? "1" : "0") +
         " asym_heuristics=" + runtime_cfg.asym_heuristics_mode +
         " adaptive_budget=" + std::string(runtime_cfg.adaptive_budget ? "1" : "0"));
     
@@ -2296,6 +2297,13 @@ GenerateRunResult run_generic_sudoku(
             maybe_publish_worker(current_attempt_start, false);
             const auto attempt_t0 = current_attempt_start;
             GenerateRunConfig attempt_cfg = runtime_cfg;
+            if (cfg.force_new_seed_per_attempt) {
+                worker_seed_state = splitmix64(worker_seed_state);
+                local_seed = bounded_positive_seed_i64(worker_seed_state);
+                rng.seed(static_cast<uint64_t>(local_seed));
+            }
+            attempt_cfg.seed = local_seed;
+            worker.seed = local_seed;
             if (has_global_time_limit) {
                 const int stop_reason = check_hard_deadline(current_attempt_start, "attempt_start", tid);
                 if (stop_reason != 0) {
@@ -3073,6 +3081,8 @@ ParseArgsResult parse_args(int argc, char** argv) {
         else if (arg == "--threads") read_value(cfg.threads);
         else if (arg == "--seed") read_value(cfg.seed);
         else if (arg == "--reseed-interval-s" || arg == "--reseed_interval_s") read_value(cfg.reseed_interval_s);
+        else if (arg == "--force-new-seed-per-attempt" || arg == "--force_new_seed_per_attempt") cfg.force_new_seed_per_attempt = true;
+        else if (arg == "--no-force-new-seed-per-attempt" || arg == "--no_force_new_seed_per_attempt") cfg.force_new_seed_per_attempt = false;
         else if (arg == "--attempt-time-budget-s" || arg == "--attempt_time_budget_s") read_value(cfg.attempt_time_budget_s);
         else if (arg == "--attempt-node-budget" || arg == "--attempt_node_budget_s") read_value(cfg.attempt_node_budget);
         else if (arg == "--quality-contract-off") cfg.enable_quality_contract = false;

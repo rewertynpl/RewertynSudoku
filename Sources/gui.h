@@ -64,6 +64,7 @@ enum FormFieldKey {
     F_THREADS,
     F_SEED,
     F_RESEED_INTERVAL,
+    F_FORCE_NEW_SEED,
     F_ATTEMPT_TIME_BUDGET,
     F_ATTEMPT_NODE_BUDGET,
     F_MAX_ATTEMPTS,
@@ -551,6 +552,12 @@ void init_form_model(GuiAppState* state) {
     add_field(make_field(F_THREADS, FormFieldType::Int, L"threads (0=auto):", L"0"));
     add_field(make_field(F_SEED, FormFieldType::Int, L"seed (0=random):", L"0"));
     add_field(make_field(F_RESEED_INTERVAL, FormFieldType::Int, L"reseed_interval_s (0=off, full worker reset):", L"0"));
+    FormField force_seed;
+    force_seed.key = F_FORCE_NEW_SEED;
+    force_seed.type = FormFieldType::Checkbox;
+    force_seed.label = L"Force new seed per attempt";
+    force_seed.checked = true;
+    add_field(std::move(force_seed));
     add_field(make_field(F_ATTEMPT_TIME_BUDGET, FormFieldType::Int, L"attempt_time_budget_s (0=brak limitu):", L"0"));
     add_field(make_field(F_ATTEMPT_NODE_BUDGET, FormFieldType::Int, L"attempt_node_budget (0=brak limitu):", L"0"));
     add_field(make_field(F_MAX_ATTEMPTS, FormFieldType::Int, L"max_attempts (0=bez limitu):", L"0"));
@@ -616,6 +623,7 @@ void init_form_model(GuiAppState* state) {
     add_layout_field(F_THREADS);
     add_layout_field(F_SEED);
     add_layout_field(F_RESEED_INTERVAL);
+    add_layout_field(F_FORCE_NEW_SEED);
     add_layout_field(F_ATTEMPT_TIME_BUDGET);
     add_layout_field(F_ATTEMPT_NODE_BUDGET);
     add_layout_field(F_MAX_ATTEMPTS);
@@ -768,6 +776,7 @@ bool read_config_from_form(GuiAppState* state, GenerateRunConfig& cfg, std::map<
     cfg.threads = form_field_int(state, F_THREADS, 0);
     cfg.seed = form_field_i64(state, F_SEED, 0);
     cfg.reseed_interval_s = form_field_int(state, F_RESEED_INTERVAL, 0);
+    cfg.force_new_seed_per_attempt = form_field_checked(state, F_FORCE_NEW_SEED, true);
     cfg.attempt_time_budget_s = static_cast<double>(form_field_u64(state, F_ATTEMPT_TIME_BUDGET, 0));
     cfg.attempt_node_budget = form_field_u64(state, F_ATTEMPT_NODE_BUDGET, 0);
     cfg.max_attempts = form_field_u64(state, F_MAX_ATTEMPTS, 0);
@@ -832,6 +841,7 @@ bool read_config_from_form(GuiAppState* state, GenerateRunConfig& cfg, std::map<
     dict["threads"] = std::to_string(cfg.threads);
     dict["seed"] = std::to_string(cfg.seed);
     dict["reseed_interval_s"] = std::to_string(cfg.reseed_interval_s);
+    dict["force_new_seed_per_attempt"] = cfg.force_new_seed_per_attempt ? "true" : "false";
     dict["attempt_time_budget_s"] = std::to_string(static_cast<int>(cfg.attempt_time_budget_s));
     dict["attempt_node_budget_s"] = std::to_string(cfg.attempt_node_budget);
     dict["max_attempts"] = std::to_string(cfg.max_attempts);
