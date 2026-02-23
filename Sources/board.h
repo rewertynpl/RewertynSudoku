@@ -59,8 +59,8 @@ struct GenericTopology {
         topo.box_rows = box_rows;
         topo.box_cols = box_cols;
         topo.n = box_rows * box_cols;
-        // Current runtime mask backend is uint64_t; keep room for future larger-mask backend.
-        if (topo.n < 4 || topo.n > 36 || topo.n > 63) {
+        // Current runtime mask backend is uint64_t.
+        if (topo.n < 4 || topo.n > 64) {
             return std::nullopt;
         }
         if (!geometria::czy_obslugiwana(topo.n, box_rows, box_cols)) {

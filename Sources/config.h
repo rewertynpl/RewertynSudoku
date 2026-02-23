@@ -30,6 +30,54 @@ enum class RequiredStrategy {
     None,
     NakedSingle,
     HiddenSingle,
+    PointingPairs,
+    BoxLineReduction,
+    NakedPair,
+    HiddenPair,
+    NakedTriple,
+    HiddenTriple,
+    NakedQuad,
+    HiddenQuad,
+    XWing,
+    YWing,
+    Skyscraper,
+    TwoStringKite,
+    EmptyRectangle,
+    RemotePairs,
+    Swordfish,
+    FinnedXWingSashimi,
+    SimpleColoring,
+    BUGPlusOne,
+    UniqueRectangle,
+    XYZWing,
+    WWing,
+    Jellyfish,
+    XChain,
+    XYChain,
+    WXYZWing,
+    FinnedSwordfishJellyfish,
+    ALSXZ,
+    UniqueLoop,
+    AvoidableRectangle,
+    BivalueOddagon,
+    Medusa3D,
+    AIC,
+    GroupedAIC,
+    GroupedXCycle,
+    ContinuousNiceLoop,
+    ALSXYWing,
+    ALSChain,
+    SueDeCoq,
+    DeathBlossom,
+    FrankenFish,
+    MutantFish,
+    KrakenFish,
+    MSLS,
+    Exocet,
+    SeniorExocet,
+    SKLoop,
+    PatternOverlayMethod,
+    ForcingChains,
     Backtracking
 };
 
@@ -41,6 +89,102 @@ std::string to_string(RequiredStrategy value) {
         return "NakedSingle";
     case RequiredStrategy::HiddenSingle:
         return "HiddenSingle";
+    case RequiredStrategy::PointingPairs:
+        return "PointingPairs";
+    case RequiredStrategy::BoxLineReduction:
+        return "BoxLineReduction";
+    case RequiredStrategy::NakedPair:
+        return "NakedPair";
+    case RequiredStrategy::HiddenPair:
+        return "HiddenPair";
+    case RequiredStrategy::NakedTriple:
+        return "NakedTriple";
+    case RequiredStrategy::HiddenTriple:
+        return "HiddenTriple";
+    case RequiredStrategy::NakedQuad:
+        return "NakedQuad";
+    case RequiredStrategy::HiddenQuad:
+        return "HiddenQuad";
+    case RequiredStrategy::XWing:
+        return "XWing";
+    case RequiredStrategy::YWing:
+        return "YWing";
+    case RequiredStrategy::Skyscraper:
+        return "Skyscraper";
+    case RequiredStrategy::TwoStringKite:
+        return "TwoStringKite";
+    case RequiredStrategy::EmptyRectangle:
+        return "EmptyRectangle";
+    case RequiredStrategy::RemotePairs:
+        return "RemotePairs";
+    case RequiredStrategy::Swordfish:
+        return "Swordfish";
+    case RequiredStrategy::FinnedXWingSashimi:
+        return "FinnedXWingSashimi";
+    case RequiredStrategy::SimpleColoring:
+        return "SimpleColoring";
+    case RequiredStrategy::BUGPlusOne:
+        return "BUGPlusOne";
+    case RequiredStrategy::UniqueRectangle:
+        return "UniqueRectangle";
+    case RequiredStrategy::XYZWing:
+        return "XYZWing";
+    case RequiredStrategy::WWing:
+        return "WWing";
+    case RequiredStrategy::Jellyfish:
+        return "Jellyfish";
+    case RequiredStrategy::XChain:
+        return "XChain";
+    case RequiredStrategy::XYChain:
+        return "XYChain";
+    case RequiredStrategy::WXYZWing:
+        return "WXYZWing";
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+        return "FinnedSwordfishJellyfish";
+    case RequiredStrategy::ALSXZ:
+        return "ALSXZ";
+    case RequiredStrategy::UniqueLoop:
+        return "UniqueLoop";
+    case RequiredStrategy::AvoidableRectangle:
+        return "AvoidableRectangle";
+    case RequiredStrategy::BivalueOddagon:
+        return "BivalueOddagon";
+    case RequiredStrategy::Medusa3D:
+        return "Medusa3D";
+    case RequiredStrategy::AIC:
+        return "AIC";
+    case RequiredStrategy::GroupedAIC:
+        return "GroupedAIC";
+    case RequiredStrategy::GroupedXCycle:
+        return "GroupedXCycle";
+    case RequiredStrategy::ContinuousNiceLoop:
+        return "ContinuousNiceLoop";
+    case RequiredStrategy::ALSXYWing:
+        return "ALSXYWing";
+    case RequiredStrategy::ALSChain:
+        return "ALSChain";
+    case RequiredStrategy::SueDeCoq:
+        return "SueDeCoq";
+    case RequiredStrategy::DeathBlossom:
+        return "DeathBlossom";
+    case RequiredStrategy::FrankenFish:
+        return "FrankenFish";
+    case RequiredStrategy::MutantFish:
+        return "MutantFish";
+    case RequiredStrategy::KrakenFish:
+        return "KrakenFish";
+    case RequiredStrategy::MSLS:
+        return "MSLS";
+    case RequiredStrategy::Exocet:
+        return "Exocet";
+    case RequiredStrategy::SeniorExocet:
+        return "SeniorExocet";
+    case RequiredStrategy::SKLoop:
+        return "SKLoop";
+    case RequiredStrategy::PatternOverlayMethod:
+        return "PatternOverlayMethod";
+    case RequiredStrategy::ForcingChains:
+        return "ForcingChains";
     case RequiredStrategy::Backtracking:
         return "Backtracking";
     default:
@@ -147,7 +291,7 @@ struct GenerateRunResult {
     double accepted_per_sec = 0.0;
     double avg_clues = 0.0;
     std::array<uint64_t, 10> histogram_levels{};
-    std::array<uint64_t, 10> histogram_strategies{};
+    std::array<uint64_t, 64> histogram_strategies{};
 };
 
 } // namespace sudoku_hpc

@@ -220,16 +220,10 @@ public:
             log_info("ConsoleStatsMonitor", "ui_thread started with interval=" + std::to_string(refresh_rate_ms) + "ms");
             using namespace std::chrono_literals;
             const auto interval = std::chrono::milliseconds(refresh_rate_ms);
-            uint64_t render_count = 0;
             while (!st.stop_requested()) {
                 render_once();
-                ++render_count;
-                if ((render_count % 10) == 0) {
-                    log_info("ConsoleStatsMonitor", "ui_thread rendered " + std::to_string(render_count) + " frames");
-                }
                 std::this_thread::sleep_for(interval);
             }
-            log_info("ConsoleStatsMonitor", "ui_thread stopping after " + std::to_string(render_count) + " renders");
             render_once();
             log_info("ConsoleStatsMonitor", "ui_thread finished");
         });
@@ -538,9 +532,16 @@ private:
         try {
             const std::string text = compose_snapshot_text();
             std::lock_guard<std::mutex> lock(render_mu_);
-            // CLI mode: just append text with newline, don't clear screen
-            log_info("ConsoleStatsMonitor", "render_once - outputting " + std::to_string(text.size()) + " bytes");
-            std::cout << "\n" << text << std::flush;
+#ifdef _WIN32
+            if (!ansi_enabled_ && render_winapi(text)) {
+                return;
+            }
+#endif
+            if (ansi_enabled_) {
+                std::cout << "\033[H\033[2J" << text << std::flush;
+            } else {
+                std::cout << "\n" << text << std::flush;
+            }
         } catch (const std::exception& ex) {
             log_error("ConsoleStatsMonitor", std::string("render_once exception: ") + ex.what());
         } catch (...) {

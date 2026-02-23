@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <future>
 
 #include "../strategieSource/strategie_types.h"
 #include "../strategieSource/strategie_scratch.h"
@@ -108,6 +109,19 @@ inline int level1_timeout_seconds_from_env() {
     }
 }
 
+inline int level1_case_timeout_seconds_from_env() {
+    const char* raw = std::getenv("SUDOKU_LEVEL1_CASE_TIMEOUT_S");
+    if (raw == nullptr || *raw == '\0') {
+        return 30;
+    }
+    try {
+        int v = std::stoi(std::string(raw));
+        return std::max(0, v);
+    } catch (...) {
+        return 30;
+    }
+}
+
 inline int level1_timeout_seconds_from_minutes_or_env(int timeout_minutes) {
     if (timeout_minutes >= 0) {
         if (timeout_minutes == 0) {
@@ -116,6 +130,13 @@ inline int level1_timeout_seconds_from_minutes_or_env(int timeout_minutes) {
         return std::max(1, timeout_minutes) * 60;
     }
     return level1_timeout_seconds_from_env();
+}
+
+inline int level1_case_timeout_seconds_from_arg_or_env(int case_timeout_s) {
+    if (case_timeout_s >= 0) {
+        return std::max(0, case_timeout_s);
+    }
+    return level1_case_timeout_seconds_from_env();
 }
 
 inline TestResult test_geometry_recognition_catalog() {
@@ -484,7 +505,8 @@ TestResult test_level1_full_solve(int box_rows, int box_cols, uint64_t seed) {
 
 inline void run_level1_asymmetric_tests(
     const std::string& report_path = "level1_asymmetric_report.txt",
-    int timeout_minutes = -1) {
+    int timeout_minutes = -1,
+    int case_timeout_s = -1) {
     std::cerr << " Starting Level 1 Asymmetric Regression Tests..." << std::endl;
     std::cerr << " Report path: " << report_path << std::endl;
     const std::string progress_path = level1_progress_path_from_report(report_path);
@@ -530,6 +552,7 @@ inline void run_level1_asymmetric_tests(
     int completed_tests = 0;
     const auto suite_start = std::chrono::steady_clock::now();
     const int timeout_s = level1_timeout_seconds_from_minutes_or_env(timeout_minutes);
+    const int configured_case_timeout_s = level1_case_timeout_seconds_from_arg_or_env(case_timeout_s);
     const bool timeout_enabled = timeout_s > 0;
     const auto deadline = suite_start + std::chrono::seconds(timeout_s > 0 ? timeout_s : 0);
 
@@ -561,11 +584,78 @@ inline void run_level1_asymmetric_tests(
             " case_ms=" + std::to_string(r.elapsed_ms) +
             " elapsed_ms=" + std::to_string(static_cast<long long>(elapsed_ms())));
     };
+    auto effective_case_timeout_s = [&]() -> int {
+        int out = configured_case_timeout_s;
+        if (out <= 0) {
+            return 0;
+        }
+        if (timeout_enabled) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline) {
+                return 0;
+            }
+            const int remain_s = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::seconds>(deadline - now).count());
+            out = std::max(1, std::min(out, remain_s));
+        }
+        return out;
+    };
+    auto run_case_with_hard_timeout = [&](const std::string& stage,
+                                          const std::string& geo,
+                                          const std::string& case_name,
+                                          auto fn) -> TestResult {
+        const int hard_limit_s = effective_case_timeout_s();
+        if (hard_limit_s <= 0) {
+            TestResult tr;
+            tr.passed = false;
+            tr.name = case_name;
+            tr.message = "SKIPPED: hard timeout budget exhausted";
+            tr.elapsed_ms = 0.0;
+            return tr;
+        }
+        std::promise<TestResult> promise;
+        std::future<TestResult> future = promise.get_future();
+        std::thread([p = std::move(promise), fn = std::move(fn), case_name]() mutable {
+            try {
+                TestResult r = fn();
+                if (r.name.empty()) {
+                    r.name = case_name;
+                }
+                p.set_value(std::move(r));
+            } catch (const std::exception& e) {
+                TestResult r;
+                r.passed = false;
+                r.name = case_name;
+                r.message = std::string("Exception: ") + e.what();
+                p.set_value(std::move(r));
+            } catch (...) {
+                TestResult r;
+                r.passed = false;
+                r.name = case_name;
+                r.message = "Unknown exception";
+                p.set_value(std::move(r));
+            }
+        }).detach();
+
+        if (future.wait_for(std::chrono::seconds(hard_limit_s)) == std::future_status::ready) {
+            return future.get();
+        }
+
+        TestResult timeout_result;
+        timeout_result.passed = false;
+        timeout_result.name = case_name;
+        timeout_result.message = "HARD_TIMEOUT per-case (" + std::to_string(hard_limit_s) + "s)";
+        timeout_result.elapsed_ms = static_cast<double>(hard_limit_s) * 1000.0;
+        progress_log("CASE_TIMEOUT stage=" + stage + " geo=" + geo + " test=" + case_name +
+                     " limit_s=" + std::to_string(hard_limit_s));
+        return timeout_result;
+    };
     bool timed_out = false;
     
     report << "ASYMMETRIC GEOMETRY TEST SUITE - LEVEL 1 STRATEGIES\n";
     report << "===================================================\n\n";
     report << "Timeout limit: " << (timeout_enabled ? (std::to_string(timeout_s) + "s") : std::string("none")) << "\n";
+    report << "Per-case hard timeout: " << (configured_case_timeout_s > 0 ? (std::to_string(configured_case_timeout_s) + "s") : std::string("off")) << "\n";
     report << "Order: rosnaco po N (male -> duze)\n";
     report << "Progress file: " << progress_path << "\n\n";
     report << "Testing " << geometries.size() << " asymmetric geometries:\n";
@@ -578,6 +668,7 @@ inline void run_level1_asymmetric_tests(
     progress_log("LEVEL1_ASYM_PROGRESS");
     progress_log("report_path=" + report_path);
     progress_log("timeout_limit_s=" + std::string(timeout_enabled ? std::to_string(timeout_s) : "none"));
+    progress_log("case_hard_timeout_s=" + std::string(configured_case_timeout_s > 0 ? std::to_string(configured_case_timeout_s) : "off"));
     progress_log("planned_tests=" + std::to_string(planned_tests));
 
     // TEST 0: GEOMETRY CATALOG RECOGNITION
@@ -590,7 +681,9 @@ inline void run_level1_asymmetric_tests(
         if (!timed_out) {
             mark_start("GeometryCatalog", "catalog", "GeometryCatalogRecognition");
         }
-        TestResult r = test_geometry_recognition_catalog();
+        TestResult r = run_case_with_hard_timeout("GeometryCatalog", "catalog", "GeometryCatalogRecognition", [] {
+            return test_geometry_recognition_catalog();
+        });
         if (r.passed) {
             ++passed_tests;
         }
@@ -612,20 +705,15 @@ inline void run_level1_asymmetric_tests(
         }
         mark_start("Generation", geo.desc, "AsymmetricGen");
         TestResult r;
-        try {
-            if (geo.N == 6)      r = test_asymmetric_generation<6>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 8) r = test_asymmetric_generation<8>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 10) r = test_asymmetric_generation<10>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 12) r = test_asymmetric_generation<12>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 15) r = test_asymmetric_generation<15>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 16) r = test_asymmetric_generation<16>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 18) r = test_asymmetric_generation<18>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 20) r = test_asymmetric_generation<20>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else continue;
-        } catch (const std::exception& e) {
-            r.passed = false;
-            r.message = std::string("Exception: ") + e.what();
-        }
+        if (geo.N == 6)      r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<6>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 8) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<8>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 10) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<10>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 12) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<12>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 15) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<15>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 16) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<16>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 18) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<18>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 20) r = run_case_with_hard_timeout("Generation", geo.desc, "AsymmetricGen", [&]() { return test_asymmetric_generation<20>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else continue;
 
         if (r.passed) ++passed_tests;
         ++total_tests;
@@ -647,20 +735,15 @@ inline void run_level1_asymmetric_tests(
         }
         mark_start("NakedSingle", geo.desc, "NakedSingle");
         TestResult r;
-        try {
-            if (geo.N == 6)      r = test_naked_single_asymmetric<6>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 8) r = test_naked_single_asymmetric<8>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 10) r = test_naked_single_asymmetric<10>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 12) r = test_naked_single_asymmetric<12>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 15) r = test_naked_single_asymmetric<15>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 16) r = test_naked_single_asymmetric<16>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 18) r = test_naked_single_asymmetric<18>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 20) r = test_naked_single_asymmetric<20>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else continue;
-        } catch (const std::exception& e) {
-            r.passed = false;
-            r.message = std::string("Exception: ") + e.what();
-        }
+        if (geo.N == 6)      r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<6>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 8) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<8>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 10) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<10>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 12) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<12>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 15) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<15>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 16) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<16>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 18) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<18>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 20) r = run_case_with_hard_timeout("NakedSingle", geo.desc, "NakedSingle", [&]() { return test_naked_single_asymmetric<20>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else continue;
 
         if (r.passed) ++passed_tests;
         ++total_tests;
@@ -682,20 +765,15 @@ inline void run_level1_asymmetric_tests(
         }
         mark_start("HiddenSingle", geo.desc, "HiddenSingle");
         TestResult r;
-        try {
-            if (geo.N == 6)      r = test_hidden_single_asymmetric<6>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 8) r = test_hidden_single_asymmetric<8>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 10) r = test_hidden_single_asymmetric<10>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 12) r = test_hidden_single_asymmetric<12>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 15) r = test_hidden_single_asymmetric<15>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 16) r = test_hidden_single_asymmetric<16>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 18) r = test_hidden_single_asymmetric<18>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 20) r = test_hidden_single_asymmetric<20>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else continue;
-        } catch (const std::exception& e) {
-            r.passed = false;
-            r.message = std::string("Exception: ") + e.what();
-        }
+        if (geo.N == 6)      r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<6>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 8) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<8>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 10) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<10>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 12) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<12>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 15) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<15>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 16) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<16>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 18) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<18>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 20) r = run_case_with_hard_timeout("HiddenSingle", geo.desc, "HiddenSingle", [&]() { return test_hidden_single_asymmetric<20>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else continue;
 
         if (r.passed) ++passed_tests;
         ++total_tests;
@@ -717,20 +795,15 @@ inline void run_level1_asymmetric_tests(
         }
         mark_start("Level1Full", geo.desc, "Level1Full");
         TestResult r;
-        try {
-            if (geo.N == 6)      r = test_level1_full_solve<6>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 8) r = test_level1_full_solve<8>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 10) r = test_level1_full_solve<10>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 12) r = test_level1_full_solve<12>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 15) r = test_level1_full_solve<15>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 16) r = test_level1_full_solve<16>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 18) r = test_level1_full_solve<18>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else if (geo.N == 20) r = test_level1_full_solve<20>(geo.box_rows, geo.box_cols, geo.test_seed);
-            else continue;
-        } catch (const std::exception& e) {
-            r.passed = false;
-            r.message = std::string("Exception: ") + e.what();
-        }
+        if (geo.N == 6)      r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<6>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 8) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<8>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 10) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<10>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 12) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<12>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 15) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<15>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 16) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<16>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 18) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<18>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else if (geo.N == 20) r = run_case_with_hard_timeout("Level1Full", geo.desc, "Level1Full", [&]() { return test_level1_full_solve<20>(geo.box_rows, geo.box_cols, geo.test_seed); });
+        else continue;
 
         if (r.passed) ++passed_tests;
         ++total_tests;
@@ -781,6 +854,7 @@ inline void run_level1_asymmetric_tests(
     std::cout << "Report: " << report_path << "\n";
     std::cout << "Progress: " << progress_path << "\n";
     std::cout << "Timeout limit: " << (timeout_enabled ? (std::to_string(timeout_s) + "s") : std::string("none")) << "\n";
+    std::cout << "Per-case hard timeout: " << (configured_case_timeout_s > 0 ? (std::to_string(configured_case_timeout_s) + "s") : std::string("off")) << "\n";
 }
 
 } // namespace sudoku_testy

@@ -103,7 +103,55 @@ static int strategy_to_hist_idx_shared(RequiredStrategy strategy) {
     case RequiredStrategy::None: return 0;
     case RequiredStrategy::NakedSingle: return 1;
     case RequiredStrategy::HiddenSingle: return 2;
-    case RequiredStrategy::Backtracking: return 9;
+    case RequiredStrategy::PointingPairs: return 3;
+    case RequiredStrategy::BoxLineReduction: return 4;
+    case RequiredStrategy::NakedPair: return 5;
+    case RequiredStrategy::HiddenPair: return 6;
+    case RequiredStrategy::NakedTriple: return 7;
+    case RequiredStrategy::HiddenTriple: return 8;
+    case RequiredStrategy::NakedQuad: return 9;
+    case RequiredStrategy::HiddenQuad: return 10;
+    case RequiredStrategy::XWing: return 11;
+    case RequiredStrategy::YWing: return 12;
+    case RequiredStrategy::Skyscraper: return 13;
+    case RequiredStrategy::TwoStringKite: return 14;
+    case RequiredStrategy::EmptyRectangle: return 15;
+    case RequiredStrategy::RemotePairs: return 16;
+    case RequiredStrategy::Swordfish: return 17;
+    case RequiredStrategy::FinnedXWingSashimi: return 18;
+    case RequiredStrategy::SimpleColoring: return 19;
+    case RequiredStrategy::BUGPlusOne: return 20;
+    case RequiredStrategy::UniqueRectangle: return 21;
+    case RequiredStrategy::XYZWing: return 22;
+    case RequiredStrategy::WWing: return 23;
+    case RequiredStrategy::Jellyfish: return 24;
+    case RequiredStrategy::XChain: return 25;
+    case RequiredStrategy::XYChain: return 26;
+    case RequiredStrategy::WXYZWing: return 27;
+    case RequiredStrategy::FinnedSwordfishJellyfish: return 28;
+    case RequiredStrategy::ALSXZ: return 29;
+    case RequiredStrategy::UniqueLoop: return 30;
+    case RequiredStrategy::AvoidableRectangle: return 31;
+    case RequiredStrategy::BivalueOddagon: return 32;
+    case RequiredStrategy::Medusa3D: return 33;
+    case RequiredStrategy::AIC: return 34;
+    case RequiredStrategy::GroupedAIC: return 35;
+    case RequiredStrategy::GroupedXCycle: return 36;
+    case RequiredStrategy::ContinuousNiceLoop: return 37;
+    case RequiredStrategy::ALSXYWing: return 38;
+    case RequiredStrategy::ALSChain: return 39;
+    case RequiredStrategy::SueDeCoq: return 40;
+    case RequiredStrategy::DeathBlossom: return 41;
+    case RequiredStrategy::FrankenFish: return 42;
+    case RequiredStrategy::MutantFish: return 43;
+    case RequiredStrategy::KrakenFish: return 44;
+    case RequiredStrategy::MSLS: return 45;
+    case RequiredStrategy::Exocet: return 46;
+    case RequiredStrategy::SeniorExocet: return 47;
+    case RequiredStrategy::SKLoop: return 48;
+    case RequiredStrategy::PatternOverlayMethod: return 49;
+    case RequiredStrategy::ForcingChains: return 50;
+    case RequiredStrategy::Backtracking: return 51;
     default: return 0;
     }
 }
@@ -463,6 +511,12 @@ GenerationProfile resolve_generation_profile(
     int level,
     RequiredStrategy strategy,
     const GenerateRunConfig* cfg_override = nullptr);
+inline bool required_strategy_runtime_ready(RequiredStrategy strategy);
+inline bool required_strategy_math_supported(RequiredStrategy strategy, int box_rows, int box_cols);
+inline bool required_strategy_selectable_for_geometry(RequiredStrategy strategy, int box_rows, int box_cols);
+inline bool difficulty_level_runtime_ready(int level);
+inline bool difficulty_level_selectable_for_geometry(int level, int box_rows, int box_cols);
+int strategy_adjusted_level(int level, RequiredStrategy strategy);
 
 inline std::string normalize_profile_mode_policy(std::string policy_raw) {
     std::string key;
@@ -881,12 +935,310 @@ static bool evaluate_required_strategy_contract_generic(
     }
     switch (required) {
     case RequiredStrategy::NakedSingle:
-        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[0].use_count > 0;
-        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[0].hit_count > 0;
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedSingle].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedSingle].hit_count > 0;
         break;
     case RequiredStrategy::HiddenSingle:
-        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[1].use_count > 0;
-        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[1].hit_count > 0;
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenSingle].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenSingle].hit_count > 0;
+        break;
+    case RequiredStrategy::PointingPairs:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotPointingPairs].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotPointingPairs].hit_count > 0;
+        break;
+    case RequiredStrategy::BoxLineReduction:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotBoxLineReduction].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotBoxLineReduction].hit_count > 0;
+        break;
+    case RequiredStrategy::NakedPair:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedPair].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedPair].hit_count > 0;
+        break;
+    case RequiredStrategy::HiddenPair:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenPair].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenPair].hit_count > 0;
+        break;
+    case RequiredStrategy::NakedTriple:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedTriple].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedTriple].hit_count > 0;
+        break;
+    case RequiredStrategy::HiddenTriple:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenTriple].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenTriple].hit_count > 0;
+        break;
+    case RequiredStrategy::NakedQuad:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedQuad].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotNakedQuad].hit_count > 0;
+        break;
+    case RequiredStrategy::HiddenQuad:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenQuad].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenQuad].hit_count > 0;
+        break;
+    case RequiredStrategy::XWing:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotXWing].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotXWing].hit_count > 0;
+        break;
+    case RequiredStrategy::YWing:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotYWing].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotYWing].hit_count > 0;
+        break;
+    case RequiredStrategy::Skyscraper:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotSkyscraper].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotSkyscraper].hit_count > 0;
+        break;
+    case RequiredStrategy::TwoStringKite:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotTwoStringKite].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotTwoStringKite].hit_count > 0;
+        break;
+    case RequiredStrategy::EmptyRectangle:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotEmptyRectangle].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotEmptyRectangle].hit_count > 0;
+        break;
+    case RequiredStrategy::RemotePairs:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotRemotePairs].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotRemotePairs].hit_count > 0;
+        break;
+    case RequiredStrategy::Swordfish:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotSwordfish].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotSwordfish].hit_count > 0;
+        break;
+    case RequiredStrategy::FinnedXWingSashimi:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotFinnedXWingSashimi].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotFinnedXWingSashimi].hit_count > 0;
+        break;
+    case RequiredStrategy::SimpleColoring:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotSimpleColoring].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotSimpleColoring].hit_count > 0;
+        break;
+    case RequiredStrategy::BUGPlusOne:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotBUGPlusOne].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotBUGPlusOne].hit_count > 0;
+        break;
+    case RequiredStrategy::UniqueRectangle:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotUniqueRectangle].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotUniqueRectangle].hit_count > 0;
+        break;
+    case RequiredStrategy::XYZWing:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotXYZWing].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotXYZWing].hit_count > 0;
+        break;
+    case RequiredStrategy::WWing:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotWWing].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotWWing].hit_count > 0;
+        break;
+    case RequiredStrategy::Jellyfish:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotJellyfish].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotJellyfish].hit_count > 0;
+        break;
+    case RequiredStrategy::XChain:
+        strategy_info.required_strategy_use_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotXChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed = logic_result.strategy_stats[GenericLogicCertify::SlotXChain].hit_count > 0;
+        break;
+    case RequiredStrategy::XYChain:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYChain].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYChain].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].hit_count > 0;
+        break;
+    case RequiredStrategy::WXYZWing:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotWXYZWing].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYZWing].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotWXYZWing].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYZWing].hit_count > 0;
+        break;
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotFinnedSwordfishJellyfish].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotFinnedXWingSashimi].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotSwordfish].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotJellyfish].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotFinnedSwordfishJellyfish].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotFinnedXWingSashimi].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotSwordfish].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotJellyfish].hit_count > 0;
+        break;
+    case RequiredStrategy::ALSXZ:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXZ].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotWWing].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXZ].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotWWing].hit_count > 0;
+        break;
+    case RequiredStrategy::UniqueLoop:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotUniqueLoop].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotUniqueRectangle].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotUniqueLoop].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotUniqueRectangle].hit_count > 0;
+        break;
+    case RequiredStrategy::AvoidableRectangle:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotAvoidableRectangle].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotUniqueRectangle].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotAvoidableRectangle].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotUniqueRectangle].hit_count > 0;
+        break;
+    case RequiredStrategy::BivalueOddagon:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotBivalueOddagon].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotBUGPlusOne].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotBivalueOddagon].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotBUGPlusOne].hit_count > 0;
+        break;
+    case RequiredStrategy::Medusa3D:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotMedusa3D].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotSimpleColoring].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotMedusa3D].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotSimpleColoring].hit_count > 0;
+        break;
+    case RequiredStrategy::AIC:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].hit_count > 0;
+        break;
+    case RequiredStrategy::GroupedAIC:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotGroupedAIC].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotGroupedAIC].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].hit_count > 0;
+        break;
+    case RequiredStrategy::GroupedXCycle:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotGroupedXCycle].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotGroupedXCycle].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].hit_count > 0;
+        break;
+    case RequiredStrategy::ContinuousNiceLoop:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotContinuousNiceLoop].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotContinuousNiceLoop].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYChain].hit_count > 0;
+        break;
+    case RequiredStrategy::ALSXYWing:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXYWing].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXZ].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXYWing].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXZ].hit_count > 0;
+        break;
+    case RequiredStrategy::ALSChain:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSChain].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXZ].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSChain].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotALSXZ].hit_count > 0;
+        break;
+    case RequiredStrategy::SueDeCoq:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotSueDeCoq].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotPointingPairs].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotSueDeCoq].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotPointingPairs].hit_count > 0;
+        break;
+    case RequiredStrategy::DeathBlossom:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotDeathBlossom].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotDeathBlossom].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXYChain].hit_count > 0;
+        break;
+    case RequiredStrategy::FrankenFish:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotFrankenFish].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotSwordfish].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotFrankenFish].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotSwordfish].hit_count > 0;
+        break;
+    case RequiredStrategy::MutantFish:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotMutantFish].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotJellyfish].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotMutantFish].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotJellyfish].hit_count > 0;
+        break;
+    case RequiredStrategy::KrakenFish:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotKrakenFish].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotKrakenFish].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotXChain].hit_count > 0;
+        break;
+    case RequiredStrategy::MSLS:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotMSLS].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotKrakenFish].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotMSLS].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotKrakenFish].hit_count > 0;
+        break;
+    case RequiredStrategy::Exocet:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotExocet].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotExocet].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].hit_count > 0;
+        break;
+    case RequiredStrategy::SeniorExocet:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotSeniorExocet].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotExocet].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotSeniorExocet].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotExocet].hit_count > 0;
+        break;
+    case RequiredStrategy::SKLoop:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotSKLoop].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotContinuousNiceLoop].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotSKLoop].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotContinuousNiceLoop].hit_count > 0;
+        break;
+    case RequiredStrategy::PatternOverlayMethod:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotPatternOverlayMethod].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotMSLS].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotPatternOverlayMethod].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotMSLS].hit_count > 0;
+        break;
+    case RequiredStrategy::ForcingChains:
+        strategy_info.required_strategy_use_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotForcingChains].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].use_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotGroupedAIC].use_count > 0;
+        strategy_info.required_strategy_hit_confirmed =
+            logic_result.strategy_stats[GenericLogicCertify::SlotForcingChains].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotAIC].hit_count > 0 ||
+            logic_result.strategy_stats[GenericLogicCertify::SlotGroupedAIC].hit_count > 0;
         break;
     case RequiredStrategy::Backtracking:
         strategy_info.required_strategy_use_confirmed = !logic_result.solved;
@@ -899,6 +1251,58 @@ static bool evaluate_required_strategy_contract_generic(
     strategy_info.analyzed_required_strategy = strategy_info.required_strategy_use_confirmed;
     strategy_info.matched_required_strategy = strategy_info.required_strategy_use_confirmed && strategy_info.required_strategy_hit_confirmed;
     return strategy_info.matched_required_strategy;
+}
+
+static bool evaluate_difficulty_contract_generic(
+    const GenericLogicCertifyResult& logic_result,
+    int difficulty_level_required) {
+    const int lvl = std::clamp(difficulty_level_required, 1, 9);
+    if (lvl <= 1) {
+        return logic_result.solved && (logic_result.used_naked_single || logic_result.used_hidden_single);
+    }
+    if (lvl == 2) {
+        return logic_result.used_pointing_pairs || logic_result.used_box_line;
+    }
+    if (lvl == 3) {
+        return logic_result.used_naked_pair || logic_result.used_hidden_pair ||
+               logic_result.used_naked_triple || logic_result.used_hidden_triple;
+    }
+    if (lvl == 4) {
+        return logic_result.used_naked_quad || logic_result.used_hidden_quad ||
+               logic_result.used_x_wing || logic_result.used_y_wing ||
+               logic_result.used_skyscraper || logic_result.used_two_string_kite ||
+               logic_result.used_empty_rectangle || logic_result.used_remote_pairs;
+    }
+    if (lvl == 5) {
+        return logic_result.used_swordfish || logic_result.used_bug_plus_one ||
+               logic_result.used_finned_x_wing_sashimi || logic_result.used_simple_coloring ||
+               logic_result.used_unique_rectangle || logic_result.used_xyz_wing ||
+               logic_result.used_w_wing;
+    }
+    if (lvl == 6) {
+        return logic_result.used_jellyfish || logic_result.used_x_chain ||
+               logic_result.used_xy_chain || logic_result.used_wxyz_wing ||
+               logic_result.used_finned_swordfish_jellyfish || logic_result.used_als_xz ||
+               logic_result.used_unique_loop || logic_result.used_avoidable_rectangle ||
+               logic_result.used_bivalue_oddagon ||
+               logic_result.used_unique_rectangle || logic_result.used_bug_plus_one ||
+               logic_result.used_w_wing;
+    }
+    if (lvl == 7) {
+        return logic_result.used_medusa_3d || logic_result.used_aic || logic_result.used_grouped_aic ||
+               logic_result.used_grouped_x_cycle || logic_result.used_continuous_nice_loop ||
+               logic_result.used_als_xy_wing || logic_result.used_als_chain ||
+               logic_result.used_sue_de_coq || logic_result.used_death_blossom ||
+               logic_result.used_franken_fish || logic_result.used_mutant_fish ||
+               logic_result.used_kraken_fish;
+    }
+    if (lvl == 8) {
+        return logic_result.used_msls || logic_result.used_exocet || logic_result.used_senior_exocet ||
+               logic_result.used_sk_loop || logic_result.used_pattern_overlay_method ||
+               logic_result.used_forcing_chains;
+    }
+    // Higher levels are not yet fully implemented in runtime certifier.
+    return true;
 }
 
 struct AttemptPerfStats {
@@ -1070,10 +1474,15 @@ static bool generate_one_generic(
     
     if (collect_perf) {
         perf_out->logic_steps = static_cast<uint64_t>(std::max(0, logic_result.steps));
-        perf_out->strategy_naked_use = logic_result.strategy_stats[0].use_count;
-        perf_out->strategy_naked_hit = logic_result.strategy_stats[0].hit_count;
-        perf_out->strategy_hidden_use = logic_result.strategy_stats[1].use_count;
-        perf_out->strategy_hidden_hit = logic_result.strategy_stats[1].hit_count;
+        perf_out->strategy_naked_use = logic_result.strategy_stats[GenericLogicCertify::SlotNakedSingle].use_count;
+        perf_out->strategy_naked_hit = logic_result.strategy_stats[GenericLogicCertify::SlotNakedSingle].hit_count;
+        perf_out->strategy_hidden_use = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenSingle].use_count;
+        perf_out->strategy_hidden_hit = logic_result.strategy_stats[GenericLogicCertify::SlotHiddenSingle].hit_count;
+    }
+
+    if (!evaluate_difficulty_contract_generic(logic_result, cfg.difficulty_level_required)) {
+        reason = RejectReason::Strategy;
+        return false;
     }
     
     const bool contract_ok = evaluate_required_strategy_contract_generic(logic_result, cfg.required_strategy, strategy_info);
@@ -1411,7 +1820,7 @@ GenerateRunResult run_generic_sudoku(
     GenerateRunResult result{};
     const auto topo_opt = GenericTopology::build(cfg.box_rows, cfg.box_cols);
     if (!topo_opt.has_value()) {
-        std::cerr << "Unsupported geometry. Expected box_rows*box_cols in [4..36].\n";
+        std::cerr << "Unsupported geometry. Expected box_rows*box_cols in [4..64].\n";
         return result;
     }
     const GenericTopology topo = *topo_opt;
@@ -1435,8 +1844,12 @@ GenerateRunResult run_generic_sudoku(
     
     if (runtime_cfg.adaptive_budget) {
         const double suggested = std::max(0.05, runtime_profile.suggested_budget_s);
-        if (runtime_cfg.attempt_time_budget_s <= 0.0) runtime_cfg.attempt_time_budget_s = std::min(5.0, suggested);
-        if (runtime_cfg.attempt_node_budget == 0) runtime_cfg.attempt_node_budget = static_cast<uint64_t>(std::clamp<double>(static_cast<double>(topo.nn) * 4000.0, 200000.0, 10000000.0));
+        const int effective_budget_level = strategy_adjusted_level(runtime_cfg.difficulty_level_required, runtime_cfg.required_strategy);
+        const bool unlimited_by_default = (effective_budget_level >= 3);
+        if (!unlimited_by_default) {
+            if (runtime_cfg.attempt_time_budget_s <= 0.0) runtime_cfg.attempt_time_budget_s = std::min(5.0, suggested);
+            if (runtime_cfg.attempt_node_budget == 0) runtime_cfg.attempt_node_budget = static_cast<uint64_t>(std::clamp<double>(static_cast<double>(topo.nn) * 4000.0, 200000.0, 10000000.0));
+        }
     }
 
     const long long seed = (cfg.seed == 0) ? random_seed_i64() : cfg.seed;
@@ -1448,6 +1861,30 @@ GenerateRunResult run_generic_sudoku(
             on_log(msg);
         }
     };
+    if (!difficulty_level_selectable_for_geometry(cfg.difficulty_level_required, cfg.box_rows, cfg.box_cols)) {
+        const std::string msg =
+            "Difficulty level not runtime-ready for geometry: level=" + std::to_string(cfg.difficulty_level_required) +
+            " box_rows=" + std::to_string(cfg.box_rows) +
+            " box_cols=" + std::to_string(cfg.box_cols);
+        log_error("run_generic", msg);
+        log_message(msg);
+        std::cerr << msg << "\n";
+        return result;
+    }
+    if (cfg.required_strategy != RequiredStrategy::None &&
+        !required_strategy_selectable_for_geometry(cfg.required_strategy, cfg.box_rows, cfg.box_cols)) {
+        const std::string msg =
+            "Required strategy not selectable for geometry: strategy=" + to_string(cfg.required_strategy) +
+            " box_rows=" + std::to_string(cfg.box_rows) +
+            " box_cols=" + std::to_string(cfg.box_cols) +
+            " reason=" + (required_strategy_runtime_ready(cfg.required_strategy)
+                              ? std::string("math_not_supported")
+                              : std::string("runtime_not_ready"));
+        log_error("run_generic", msg);
+        log_message(msg);
+        std::cerr << msg << "\n";
+        return result;
+    }
     log_info(
         "run_generic",
         "start n=" + std::to_string(topo.n) +
@@ -1512,6 +1949,7 @@ GenerateRunResult run_generic_sudoku(
     PaddedAtomic<uint64_t> analyzed_required_strategy{0}, required_strategy_hits{0}, written_required_strategy{0}, clue_sum_required_strategy{0};
     PaddedAtomic<bool> force_abort{false}, io_failed{false};
     PaddedAtomic<int> started_workers{0};
+    PaddedAtomic<int> hard_stop_reason{0}; // 0=none, 1=max_total_time_s, 2=max_attempts_s
     
     auto telemetry_ring = std::make_unique<TelemetryMpscRing<4096>>();
     auto apply_telemetry_delta = [&](const TelemetryDelta& d) {
@@ -1543,6 +1981,46 @@ GenerateRunResult run_generic_sudoku(
         }
     };
     const auto start = std::chrono::steady_clock::now();
+    const bool has_max_total_deadline = (cfg.max_total_time_s > 0);
+    const bool has_max_attempts_deadline = (cfg.max_attempts_s > 0);
+    const bool has_any_hard_deadline = has_max_total_deadline || has_max_attempts_deadline;
+    const auto hard_deadline_total = has_max_total_deadline
+        ? (start + std::chrono::seconds(cfg.max_total_time_s))
+        : std::chrono::steady_clock::time_point::max();
+    const auto hard_deadline_attempts = has_max_attempts_deadline
+        ? (start + std::chrono::seconds(cfg.max_attempts_s))
+        : std::chrono::steady_clock::time_point::max();
+    auto latch_hard_stop = [&](int reason, const char* source, int tid) -> int {
+        int expected = 0;
+        if (!hard_stop_reason.value.compare_exchange_strong(expected, reason, std::memory_order_relaxed)) {
+            return hard_stop_reason.load(std::memory_order_relaxed);
+        }
+        if (reason == 1) {
+            timeout_global_count.fetch_add(1, std::memory_order_relaxed);
+        } else if (reason == 2) {
+            timeout_per_attempt_count.fetch_add(1, std::memory_order_relaxed);
+        }
+        force_abort.store(true, std::memory_order_relaxed);
+        const double elapsed_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        const uint64_t limit_s = (reason == 1) ? cfg.max_total_time_s : cfg.max_attempts_s;
+        log_warn(
+            "run_generic.hard_stop",
+            std::string("reason=") + (reason == 1 ? "max_total_time_s" : "max_attempts_s") +
+                " source=" + source +
+                " tid=" + std::to_string(tid) +
+                " elapsed_s=" + format_fixed(elapsed_s, 3) +
+                " limit_s=" + std::to_string(limit_s));
+        return reason;
+    };
+    auto check_hard_deadline = [&](const std::chrono::steady_clock::time_point& now_tp, const char* source, int tid) -> int {
+        if (has_max_total_deadline && now_tp >= hard_deadline_total) {
+            return latch_hard_stop(1, source, tid);
+        }
+        if (has_max_attempts_deadline && now_tp >= hard_deadline_attempts) {
+            return latch_hard_stop(2, source, tid);
+        }
+        return hard_stop_reason.load(std::memory_order_relaxed);
+    };
     auto push_monitor_totals = [&]() {
         if (monitor == nullptr) {
             return;
@@ -1620,6 +2098,21 @@ GenerateRunResult run_generic_sudoku(
         batch_out.flush();
     });
 
+    std::atomic<bool> timeout_watchdog_stop{false};
+    std::thread timeout_watchdog;
+    if (has_any_hard_deadline) {
+        timeout_watchdog = std::thread([&]() {
+            while (!timeout_watchdog_stop.load(std::memory_order_relaxed) &&
+                   !force_abort.load(std::memory_order_relaxed)) {
+                const int reason = check_hard_deadline(std::chrono::steady_clock::now(), "watchdog", -1);
+                if (reason != 0) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        });
+    }
+
     const GenericSolvedKernel solved(GenericSolvedKernel::backend_from_string(cpu_ctx.selected_backend));
     const GenericDigKernel dig;
     const GenericQuickPrefilter prefilter;
@@ -1640,7 +2133,7 @@ GenerateRunResult run_generic_sudoku(
         const bool has_external_pause = (external_paused != nullptr);
         const bool reseed_enabled = cfg.reseed_interval_s > 0;
         const auto reseed_interval = std::chrono::seconds(cfg.reseed_interval_s);
-        const bool has_global_time_limit = (cfg.max_total_time_s > 0 || cfg.max_attempts_s > 0);
+        const bool has_global_time_limit = has_any_hard_deadline;
         
         auto last_reseed_time = std::chrono::steady_clock::now();
         auto last_monitor_push = std::chrono::steady_clock::now();
@@ -1774,16 +2267,9 @@ GenerateRunResult run_generic_sudoku(
                 }
 
                 if (has_global_time_limit) {
-                    const auto total_elapsed = std::chrono::duration<double>(now_tp - start).count();
-                    if (cfg.max_total_time_s > 0 && total_elapsed > static_cast<double>(cfg.max_total_time_s)) {
-                        timeout_global_count.fetch_add(1, std::memory_order_relaxed);
-                        force_abort.store(true, std::memory_order_relaxed);
-                        worker.status = "global_timeout";
-                        break;
-                    }
-                    if (cfg.max_attempts_s > 0 && total_elapsed > static_cast<double>(cfg.max_attempts_s)) {
-                        timeout_per_attempt_count.fetch_add(1, std::memory_order_relaxed);
-                        worker.status = "run_time_budget";
+                    const int stop_reason = check_hard_deadline(now_tp, "worker_loop", tid);
+                    if (stop_reason != 0) {
+                        worker.status = (stop_reason == 1) ? "global_timeout" : "run_time_budget";
                         break;
                     }
                 }
@@ -1809,6 +2295,37 @@ GenerateRunResult run_generic_sudoku(
             attempt_in_progress = true;
             maybe_publish_worker(current_attempt_start, false);
             const auto attempt_t0 = current_attempt_start;
+            GenerateRunConfig attempt_cfg = runtime_cfg;
+            if (has_global_time_limit) {
+                const int stop_reason = check_hard_deadline(current_attempt_start, "attempt_start", tid);
+                if (stop_reason != 0) {
+                    attempt_in_progress = false;
+                    worker.status = (stop_reason == 1) ? "global_timeout" : "run_time_budget";
+                    break;
+                }
+                double remaining_s = std::numeric_limits<double>::infinity();
+                if (has_max_total_deadline) {
+                    const double left_total = std::chrono::duration<double>(hard_deadline_total - current_attempt_start).count();
+                    remaining_s = std::min(remaining_s, left_total);
+                }
+                if (has_max_attempts_deadline) {
+                    const double left_legacy = std::chrono::duration<double>(hard_deadline_attempts - current_attempt_start).count();
+                    remaining_s = std::min(remaining_s, left_legacy);
+                }
+                remaining_s = std::max(0.0, remaining_s);
+                if (!(remaining_s > 0.0)) {
+                    const int forced_reason = has_max_attempts_deadline ? 2 : 1;
+                    const int latched = latch_hard_stop(forced_reason, "attempt_remaining", tid);
+                    attempt_in_progress = false;
+                    worker.status = (latched == 1) ? "global_timeout" : "run_time_budget";
+                    break;
+                }
+                if (attempt_cfg.attempt_time_budget_s <= 0.0) {
+                    attempt_cfg.attempt_time_budget_s = remaining_s;
+                } else {
+                    attempt_cfg.attempt_time_budget_s = std::min(attempt_cfg.attempt_time_budget_s, remaining_s);
+                }
+            }
 
             RejectReason reason = RejectReason::None;
             RequiredStrategyAttemptInfo strategy_info{};
@@ -1816,7 +2333,7 @@ GenerateRunResult run_generic_sudoku(
             bool attempt_timed_out = false;
             
             bool ok = generate_one_generic(
-                runtime_cfg, topo, rng, candidate, reason, strategy_info,
+                attempt_cfg, topo, rng, candidate, reason, strategy_info,
                 solved, dig, prefilter, logic, uniq,
                 &force_abort.value, &attempt_timed_out, external_cancel, external_paused,
                 nullptr, nullptr, nullptr, &perf_stats);
@@ -1962,7 +2479,11 @@ GenerateRunResult run_generic_sudoku(
         }
     };
 
-PersistentThreadPool::instance().run(thread_count, worker_task);
+    PersistentThreadPool::instance().run(thread_count, worker_task);
+    timeout_watchdog_stop.store(true, std::memory_order_relaxed);
+    if (timeout_watchdog.joinable()) {
+        timeout_watchdog.join();
+    }
     
     drain_telemetry_ring();
     
@@ -2080,8 +2601,198 @@ RequiredStrategy parse_required_strategy(const std::string& s) {
     if (key == "none" || key == "brak") return RequiredStrategy::None;
     if (key == "naked" || key == "nakedsingle" || key == "single") return RequiredStrategy::NakedSingle;
     if (key == "hidden" || key == "hiddensingle") return RequiredStrategy::HiddenSingle;
+    if (key == "pointing" || key == "pointingpair" || key == "pointingpairs" || key == "pointingtriple" || key == "pointingtriples") return RequiredStrategy::PointingPairs;
+    if (key == "boxline" || key == "boxlinereduction" || key == "linebox") return RequiredStrategy::BoxLineReduction;
+    if (key == "nakedpair" || key == "pair") return RequiredStrategy::NakedPair;
+    if (key == "hiddenpair") return RequiredStrategy::HiddenPair;
+    if (key == "nakedtriple" || key == "triple") return RequiredStrategy::NakedTriple;
+    if (key == "hiddentriple") return RequiredStrategy::HiddenTriple;
+    if (key == "nakedquad" || key == "quad") return RequiredStrategy::NakedQuad;
+    if (key == "hiddenquad") return RequiredStrategy::HiddenQuad;
+    if (key == "xwing" || key == "xwingfish") return RequiredStrategy::XWing;
+    if (key == "ywing") return RequiredStrategy::YWing;
+    if (key == "skyscraper") return RequiredStrategy::Skyscraper;
+    if (key == "twostringkite" || key == "2stringkite" || key == "kite") return RequiredStrategy::TwoStringKite;
+    if (key == "emptyrectangle" || key == "er") return RequiredStrategy::EmptyRectangle;
+    if (key == "remotepairs" || key == "remote") return RequiredStrategy::RemotePairs;
+    if (key == "swordfish") return RequiredStrategy::Swordfish;
+    if (key == "finnedxwing" || key == "finnedxwingsashimi" || key == "sashimixwing") return RequiredStrategy::FinnedXWingSashimi;
+    if (key == "simplecoloring" || key == "coloring") return RequiredStrategy::SimpleColoring;
+    if (key == "bug1" || key == "bugplus1" || key == "bugplusone") return RequiredStrategy::BUGPlusOne;
+    if (key == "uniquerectangle" || key == "ur") return RequiredStrategy::UniqueRectangle;
+    if (key == "xyzzwing" || key == "xyzwing") return RequiredStrategy::XYZWing;
+    if (key == "wwing") return RequiredStrategy::WWing;
+    if (key == "jellyfish") return RequiredStrategy::Jellyfish;
+    if (key == "xchain") return RequiredStrategy::XChain;
+    if (key == "xychain") return RequiredStrategy::XYChain;
+    if (key == "wxyzwing") return RequiredStrategy::WXYZWing;
+    if (key == "finnedswordfish" || key == "finnedswordfishjellyfish" || key == "finnedjellyfish") return RequiredStrategy::FinnedSwordfishJellyfish;
+    if (key == "alsxz") return RequiredStrategy::ALSXZ;
+    if (key == "uniqueloop") return RequiredStrategy::UniqueLoop;
+    if (key == "avoidablerectangle") return RequiredStrategy::AvoidableRectangle;
+    if (key == "bivalueoddagon") return RequiredStrategy::BivalueOddagon;
+    if (key == "medusa" || key == "3dmedusa" || key == "medusa3d") return RequiredStrategy::Medusa3D;
+    if (key == "aic") return RequiredStrategy::AIC;
+    if (key == "groupedaic") return RequiredStrategy::GroupedAIC;
+    if (key == "groupedxcycle" || key == "xcyclegrouped") return RequiredStrategy::GroupedXCycle;
+    if (key == "continuousniceloop" || key == "niceloop") return RequiredStrategy::ContinuousNiceLoop;
+    if (key == "alsxywing" || key == "alsxy") return RequiredStrategy::ALSXYWing;
+    if (key == "alschain") return RequiredStrategy::ALSChain;
+    if (key == "suedecoq" || key == "sdc") return RequiredStrategy::SueDeCoq;
+    if (key == "deathblossom") return RequiredStrategy::DeathBlossom;
+    if (key == "frankenfish") return RequiredStrategy::FrankenFish;
+    if (key == "mutantfish") return RequiredStrategy::MutantFish;
+    if (key == "krakenfish") return RequiredStrategy::KrakenFish;
+    if (key == "msls") return RequiredStrategy::MSLS;
+    if (key == "exocet") return RequiredStrategy::Exocet;
+    if (key == "seniorexocet") return RequiredStrategy::SeniorExocet;
+    if (key == "skloop") return RequiredStrategy::SKLoop;
+    if (key == "patternoverlaymethod" || key == "patternoverlay" || key == "pom") return RequiredStrategy::PatternOverlayMethod;
+    if (key == "forcingchains" || key == "forcingchain") return RequiredStrategy::ForcingChains;
     if (key == "backtracking" || key == "brutalny" || key == "bruteforce") return RequiredStrategy::Backtracking;
     return RequiredStrategy::None;
+}
+
+inline bool required_strategy_runtime_ready(RequiredStrategy strategy) {
+    switch (strategy) {
+    case RequiredStrategy::None:
+    case RequiredStrategy::NakedSingle:
+    case RequiredStrategy::HiddenSingle:
+    case RequiredStrategy::PointingPairs:
+    case RequiredStrategy::BoxLineReduction:
+    case RequiredStrategy::NakedPair:
+    case RequiredStrategy::HiddenPair:
+    case RequiredStrategy::NakedTriple:
+    case RequiredStrategy::HiddenTriple:
+    case RequiredStrategy::NakedQuad:
+    case RequiredStrategy::HiddenQuad:
+    case RequiredStrategy::XWing:
+    case RequiredStrategy::YWing:
+    case RequiredStrategy::Skyscraper:
+    case RequiredStrategy::TwoStringKite:
+    case RequiredStrategy::EmptyRectangle:
+    case RequiredStrategy::RemotePairs:
+    case RequiredStrategy::Swordfish:
+    case RequiredStrategy::FinnedXWingSashimi:
+    case RequiredStrategy::SimpleColoring:
+    case RequiredStrategy::BUGPlusOne:
+    case RequiredStrategy::UniqueRectangle:
+    case RequiredStrategy::XYZWing:
+    case RequiredStrategy::WWing:
+    case RequiredStrategy::Jellyfish:
+    case RequiredStrategy::XChain:
+    case RequiredStrategy::XYChain:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::UniqueLoop:
+    case RequiredStrategy::AvoidableRectangle:
+    case RequiredStrategy::BivalueOddagon:
+    case RequiredStrategy::Medusa3D:
+    case RequiredStrategy::AIC:
+    case RequiredStrategy::GroupedAIC:
+    case RequiredStrategy::GroupedXCycle:
+    case RequiredStrategy::ContinuousNiceLoop:
+    case RequiredStrategy::ALSXYWing:
+    case RequiredStrategy::ALSChain:
+    case RequiredStrategy::SueDeCoq:
+    case RequiredStrategy::DeathBlossom:
+    case RequiredStrategy::FrankenFish:
+    case RequiredStrategy::MutantFish:
+    case RequiredStrategy::KrakenFish:
+    case RequiredStrategy::MSLS:
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::SKLoop:
+    case RequiredStrategy::PatternOverlayMethod:
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::Backtracking:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool required_strategy_math_supported(RequiredStrategy strategy, int box_rows, int box_cols) {
+    const int n = std::max(1, box_rows) * std::max(1, box_cols);
+    if (n < 4 || n > 64) {
+        return strategy == RequiredStrategy::None;
+    }
+    switch (strategy) {
+    case RequiredStrategy::None:
+    case RequiredStrategy::NakedSingle:
+    case RequiredStrategy::HiddenSingle:
+    case RequiredStrategy::NakedPair:
+    case RequiredStrategy::HiddenPair:
+    case RequiredStrategy::NakedTriple:
+    case RequiredStrategy::HiddenTriple:
+    case RequiredStrategy::NakedQuad:
+    case RequiredStrategy::HiddenQuad:
+    case RequiredStrategy::XWing:
+    case RequiredStrategy::YWing:
+    case RequiredStrategy::Skyscraper:
+    case RequiredStrategy::TwoStringKite:
+    case RequiredStrategy::RemotePairs:
+    case RequiredStrategy::Swordfish:
+    case RequiredStrategy::SimpleColoring:
+    case RequiredStrategy::XYZWing:
+    case RequiredStrategy::WWing:
+    case RequiredStrategy::Jellyfish:
+    case RequiredStrategy::XChain:
+    case RequiredStrategy::XYChain:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::BivalueOddagon:
+    case RequiredStrategy::Medusa3D:
+    case RequiredStrategy::AIC:
+    case RequiredStrategy::GroupedAIC:
+    case RequiredStrategy::GroupedXCycle:
+    case RequiredStrategy::ContinuousNiceLoop:
+    case RequiredStrategy::ALSXYWing:
+    case RequiredStrategy::ALSChain:
+    case RequiredStrategy::KrakenFish:
+    case RequiredStrategy::MSLS:
+    case RequiredStrategy::PatternOverlayMethod:
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::Backtracking:
+        return true;
+    case RequiredStrategy::PointingPairs:
+    case RequiredStrategy::BoxLineReduction:
+    case RequiredStrategy::EmptyRectangle:
+    case RequiredStrategy::FinnedXWingSashimi:
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+    case RequiredStrategy::BUGPlusOne:
+    case RequiredStrategy::UniqueRectangle:
+    case RequiredStrategy::UniqueLoop:
+    case RequiredStrategy::AvoidableRectangle:
+    case RequiredStrategy::SueDeCoq:
+    case RequiredStrategy::DeathBlossom:
+    case RequiredStrategy::FrankenFish:
+    case RequiredStrategy::MutantFish:
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::SKLoop:
+        return box_rows > 1 && box_cols > 1;
+    default:
+        return false;
+    }
+}
+
+inline bool required_strategy_selectable_for_geometry(RequiredStrategy strategy, int box_rows, int box_cols) {
+    return required_strategy_runtime_ready(strategy) && required_strategy_math_supported(strategy, box_rows, box_cols);
+}
+
+inline bool difficulty_level_runtime_ready(int level) {
+    const int lvl = std::clamp(level, 1, 9);
+    return lvl <= 8 || lvl == 9;
+}
+
+inline bool difficulty_level_selectable_for_geometry(int level, int box_rows, int box_cols) {
+    const int n = std::max(1, box_rows) * std::max(1, box_cols);
+    if (n < 4 || n > 64) {
+        return false;
+    }
+    return difficulty_level_runtime_ready(level);
 }
 
 int strategy_adjusted_level(int level, RequiredStrategy strategy) {
@@ -2089,6 +2800,61 @@ int strategy_adjusted_level(int level, RequiredStrategy strategy) {
     switch (strategy) {
     case RequiredStrategy::NakedSingle: return std::min(clamped, 2);
     case RequiredStrategy::HiddenSingle: return std::clamp(clamped, 2, 4);
+    case RequiredStrategy::PointingPairs:
+    case RequiredStrategy::BoxLineReduction:
+        return std::max(clamped, 2);
+    case RequiredStrategy::NakedPair:
+    case RequiredStrategy::HiddenPair:
+    case RequiredStrategy::NakedTriple:
+    case RequiredStrategy::HiddenTriple:
+        return std::max(clamped, 3);
+    case RequiredStrategy::NakedQuad:
+    case RequiredStrategy::HiddenQuad:
+    case RequiredStrategy::XWing:
+    case RequiredStrategy::YWing:
+    case RequiredStrategy::Skyscraper:
+    case RequiredStrategy::TwoStringKite:
+    case RequiredStrategy::EmptyRectangle:
+    case RequiredStrategy::RemotePairs:
+        return std::max(clamped, 4);
+    case RequiredStrategy::Swordfish:
+    case RequiredStrategy::FinnedXWingSashimi:
+    case RequiredStrategy::SimpleColoring:
+    case RequiredStrategy::BUGPlusOne:
+    case RequiredStrategy::UniqueRectangle:
+    case RequiredStrategy::XYZWing:
+    case RequiredStrategy::WWing:
+        return std::max(clamped, 5);
+    case RequiredStrategy::Jellyfish:
+    case RequiredStrategy::XChain:
+    case RequiredStrategy::XYChain:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::UniqueLoop:
+    case RequiredStrategy::AvoidableRectangle:
+    case RequiredStrategy::BivalueOddagon:
+        return std::max(clamped, 6);
+    case RequiredStrategy::Medusa3D:
+    case RequiredStrategy::AIC:
+    case RequiredStrategy::GroupedAIC:
+    case RequiredStrategy::GroupedXCycle:
+    case RequiredStrategy::ContinuousNiceLoop:
+    case RequiredStrategy::ALSXYWing:
+    case RequiredStrategy::ALSChain:
+    case RequiredStrategy::SueDeCoq:
+    case RequiredStrategy::DeathBlossom:
+    case RequiredStrategy::FrankenFish:
+    case RequiredStrategy::MutantFish:
+    case RequiredStrategy::KrakenFish:
+        return std::max(clamped, 7);
+    case RequiredStrategy::MSLS:
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::SKLoop:
+    case RequiredStrategy::PatternOverlayMethod:
+    case RequiredStrategy::ForcingChains:
+        return std::max(clamped, 8);
     case RequiredStrategy::Backtracking: return 9;
     case RequiredStrategy::None:
     default: return clamped;
@@ -2100,22 +2866,23 @@ ClueRange clue_range_for_size_level(int n, int level) {
     if (n <= 0) return {};
     if (n == 6) {
         static constexpr int min_t[9] = {14, 10, 10, 8, 8, 7, 7, 7, 6};
-        static constexpr int max_t[9] = {18, 14, 14, 10, 10, 9, 9, 9, 8};
+        // Poziom 9: max_clues ma byc takie samo jak dla poziomu 1.
+        static constexpr int max_t[9] = {18, 14, 14, 10, 10, 9, 9, 9, 18};
         return {min_t[lvl - 1], max_t[lvl - 1]};
     }
     if (n == 9) {
         static constexpr int min_t[9] = {36, 30, 30, 25, 25, 22, 22, 22, 17};
-        static constexpr int max_t[9] = {45, 35, 35, 29, 29, 25, 25, 25, 24};
+        static constexpr int max_t[9] = {45, 35, 35, 29, 29, 25, 25, 25, 45};
         return {min_t[lvl - 1], max_t[lvl - 1]};
     }
     if (n == 16) {
         static constexpr int min_t[9] = {135, 110, 110, 90, 90, 75, 75, 75, 64};
-        static constexpr int max_t[9] = {160, 134, 134, 109, 109, 89, 89, 89, 82};
+        static constexpr int max_t[9] = {160, 134, 134, 109, 109, 89, 89, 89, 160};
         return {min_t[lvl - 1], max_t[lvl - 1]};
     }
 
     static constexpr double min_ratio[9] = {0.44, 0.38, 0.35, 0.31, 0.28, 0.24, 0.22, 0.20, 0.16};
-    static constexpr double max_ratio[9] = {0.62, 0.56, 0.52, 0.47, 0.43, 0.39, 0.36, 0.33, 0.28};
+    static constexpr double max_ratio[9] = {0.62, 0.56, 0.52, 0.47, 0.43, 0.39, 0.36, 0.33, 0.62};
     const int nn = n * n;
     int min_c = static_cast<int>(std::floor(static_cast<double>(nn) * min_ratio[lvl - 1]));
     int max_c = static_cast<int>(std::ceil(static_cast<double>(nn) * max_ratio[lvl - 1]));
@@ -2385,7 +3152,7 @@ ParseArgsResult parse_args(int argc, char** argv) {
     cfg.box_rows = std::max(1, cfg.box_rows);
     cfg.box_cols = std::max(1, cfg.box_cols);
     cfg.difficulty_level_required = std::clamp(cfg.difficulty_level_required, 1, 9);
-    cfg.full_for_n_ge = std::clamp(cfg.full_for_n_ge, 4, 36);
+    cfg.full_for_n_ge = std::clamp(cfg.full_for_n_ge, 4, 64);
     cfg.profile_mode_policy = normalize_profile_mode_policy(cfg.profile_mode_policy);
     cfg.cpu_backend_policy = normalize_cpu_backend_policy(cfg.cpu_backend_policy);
     cfg.asym_heuristics_mode = normalize_asym_heuristics_mode(cfg.asym_heuristics_mode);
@@ -3199,7 +3966,13 @@ BenchmarkReportData build_sample_benchmark_data(const GenerateRunConfig& cfg, co
 
 RequiredStrategy default_required_strategy_for_level(int lvl) {
     if (lvl == 1) return RequiredStrategy::NakedSingle;
-    if (lvl == 2) return RequiredStrategy::HiddenSingle;
+    if (lvl == 2) return RequiredStrategy::PointingPairs;
+    if (lvl == 3) return RequiredStrategy::NakedPair;
+    if (lvl == 4) return RequiredStrategy::XWing;
+    if (lvl == 5) return RequiredStrategy::Swordfish;
+    if (lvl == 6) return RequiredStrategy::Jellyfish;
+    if (lvl == 7) return RequiredStrategy::Medusa3D;
+    if (lvl == 8) return RequiredStrategy::MSLS;
     return RequiredStrategy::None;
 }
 

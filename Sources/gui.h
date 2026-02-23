@@ -82,6 +82,7 @@ struct FormField {
     std::wstring label;
     std::wstring text;
     std::vector<std::wstring> options;
+    std::vector<int> option_payload;
     int option_index = 0;
     bool checked = false;
     bool enabled = true;
@@ -318,6 +319,187 @@ void set_form_field_checked(GuiAppState* state, int key, bool checked) {
     }
 }
 
+struct RequiredStrategyUiEntry {
+    RequiredStrategy strategy = RequiredStrategy::None;
+    const wchar_t* label = L"";
+};
+
+struct DifficultyUiEntry {
+    int level = 1;
+    const wchar_t* label = L"";
+};
+
+inline const std::vector<DifficultyUiEntry>& difficulty_ui_catalog() {
+    static const std::vector<DifficultyUiEntry> entries = {
+        {1, L"1 - Naked/Hidden Single"},
+        {2, L"2 - Pointing / Box-Line"},
+        {3, L"3 - Pairs/Triples"},
+        {4, L"4 - Wings/Fishes basic"},
+        {5, L"5 - Swordfish/FinnedXW/Coloring"},
+        {6, L"6 - Jellyfish/Chains/ALS"},
+        {7, L"7 - Medusa/AIC/Sue de Coq"},
+        {8, L"8 - MSLS/Exocet/Forcing Chains"},
+        {9, L"9 - Backtracking/Brutalny (max_clues=L1)"},
+    };
+    return entries;
+}
+
+inline int difficulty_level_from_form(const GuiAppState* state) {
+    const FormField* field = find_form_field(state, F_DIFFICULTY);
+    if (field == nullptr) {
+        return 1;
+    }
+    const int sel = std::clamp(field->option_index, 0, std::max(0, static_cast<int>(field->options.size()) - 1));
+    if (!field->option_payload.empty() && sel >= 0 && sel < static_cast<int>(field->option_payload.size())) {
+        return std::clamp(field->option_payload[static_cast<size_t>(sel)], 1, 9);
+    }
+    return std::clamp(sel + 1, 1, 9);
+}
+
+inline void refresh_difficulty_options(GuiAppState* state, bool keep_selection = true) {
+    if (state == nullptr) {
+        return;
+    }
+    FormField* field = find_form_field(state, F_DIFFICULTY);
+    if (field == nullptr || field->type != FormFieldType::Combo) {
+        return;
+    }
+    const int prev = keep_selection ? difficulty_level_from_form(state) : 1;
+    const int box_rows = std::max(1, form_field_int(state, F_BOX_ROWS, 3));
+    const int box_cols = std::max(1, form_field_int(state, F_BOX_COLS, 3));
+
+    field->options.clear();
+    field->option_payload.clear();
+    for (const auto& entry : difficulty_ui_catalog()) {
+        if (!difficulty_level_selectable_for_geometry(entry.level, box_rows, box_cols)) {
+            continue;
+        }
+        field->options.push_back(entry.label);
+        field->option_payload.push_back(entry.level);
+    }
+    if (field->options.empty()) {
+        field->options.push_back(L"1 - Naked/Hidden Single");
+        field->option_payload.push_back(1);
+    }
+    int next_index = 0;
+    for (int i = 0; i < static_cast<int>(field->option_payload.size()); ++i) {
+        if (field->option_payload[static_cast<size_t>(i)] == prev) {
+            next_index = i;
+            break;
+        }
+    }
+    field->option_index = std::clamp(next_index, 0, static_cast<int>(field->options.size()) - 1);
+}
+
+inline const std::vector<RequiredStrategyUiEntry>& required_strategy_ui_catalog() {
+    static const std::vector<RequiredStrategyUiEntry> entries = {
+        {RequiredStrategy::None, L"(brak)"},
+        {RequiredStrategy::NakedSingle, L"Naked Single"},
+        {RequiredStrategy::HiddenSingle, L"Hidden Single"},
+        {RequiredStrategy::PointingPairs, L"Pointing Pairs/Triples"},
+        {RequiredStrategy::BoxLineReduction, L"Box/Line Reduction"},
+        {RequiredStrategy::NakedPair, L"Naked Pair"},
+        {RequiredStrategy::HiddenPair, L"Hidden Pair"},
+        {RequiredStrategy::NakedTriple, L"Naked Triple"},
+        {RequiredStrategy::HiddenTriple, L"Hidden Triple"},
+        {RequiredStrategy::NakedQuad, L"Naked Quad"},
+        {RequiredStrategy::HiddenQuad, L"Hidden Quad"},
+        {RequiredStrategy::XWing, L"X-Wing"},
+        {RequiredStrategy::YWing, L"Y-Wing"},
+        {RequiredStrategy::Skyscraper, L"Skyscraper"},
+        {RequiredStrategy::TwoStringKite, L"2-String Kite"},
+        {RequiredStrategy::EmptyRectangle, L"Empty Rectangle"},
+        {RequiredStrategy::RemotePairs, L"Remote Pairs"},
+        {RequiredStrategy::Swordfish, L"Swordfish"},
+        {RequiredStrategy::FinnedXWingSashimi, L"Finned X-Wing/Sashimi"},
+        {RequiredStrategy::SimpleColoring, L"Simple Coloring"},
+        {RequiredStrategy::BUGPlusOne, L"BUG+1"},
+        {RequiredStrategy::UniqueRectangle, L"Unique Rectangle"},
+        {RequiredStrategy::XYZWing, L"XYZ-Wing"},
+        {RequiredStrategy::WWing, L"W-Wing"},
+        {RequiredStrategy::Jellyfish, L"Jellyfish"},
+        {RequiredStrategy::XChain, L"X-Chain"},
+        {RequiredStrategy::XYChain, L"XY-Chain"},
+        {RequiredStrategy::WXYZWing, L"WXYZ-Wing"},
+        {RequiredStrategy::FinnedSwordfishJellyfish, L"Finned Swordfish/Jellyfish"},
+        {RequiredStrategy::ALSXZ, L"ALS-XZ"},
+        {RequiredStrategy::UniqueLoop, L"Unique Loop"},
+        {RequiredStrategy::AvoidableRectangle, L"Avoidable Rectangle"},
+        {RequiredStrategy::BivalueOddagon, L"Bivalue Oddagon"},
+        {RequiredStrategy::Medusa3D, L"3D Medusa"},
+        {RequiredStrategy::AIC, L"AIC"},
+        {RequiredStrategy::GroupedAIC, L"Grouped AIC"},
+        {RequiredStrategy::GroupedXCycle, L"Grouped X-Cycle"},
+        {RequiredStrategy::ContinuousNiceLoop, L"Continuous Nice Loop"},
+        {RequiredStrategy::ALSXYWing, L"ALS-XY-Wing"},
+        {RequiredStrategy::ALSChain, L"ALS-Chain"},
+        {RequiredStrategy::SueDeCoq, L"Sue de Coq"},
+        {RequiredStrategy::DeathBlossom, L"Death Blossom"},
+        {RequiredStrategy::FrankenFish, L"Franken Fish"},
+        {RequiredStrategy::MutantFish, L"Mutant Fish"},
+        {RequiredStrategy::KrakenFish, L"Kraken Fish"},
+        {RequiredStrategy::MSLS, L"MSLS"},
+        {RequiredStrategy::Exocet, L"Exocet"},
+        {RequiredStrategy::SeniorExocet, L"Senior Exocet"},
+        {RequiredStrategy::SKLoop, L"SK Loop"},
+        {RequiredStrategy::PatternOverlayMethod, L"Pattern Overlay Method"},
+        {RequiredStrategy::ForcingChains, L"Forcing Chains"},
+        {RequiredStrategy::Backtracking, L"Backtracking"},
+    };
+    return entries;
+}
+
+inline RequiredStrategy required_strategy_from_form(const GuiAppState* state) {
+    const FormField* field = find_form_field(state, F_REQUIRED_STRATEGY);
+    if (field == nullptr) {
+        return RequiredStrategy::None;
+    }
+    const int sel = std::clamp(field->option_index, 0, std::max(0, static_cast<int>(field->options.size()) - 1));
+    if (!field->option_payload.empty() && sel >= 0 && sel < static_cast<int>(field->option_payload.size())) {
+        return static_cast<RequiredStrategy>(field->option_payload[static_cast<size_t>(sel)]);
+    }
+    return RequiredStrategy::None;
+}
+
+inline void refresh_required_strategy_options(GuiAppState* state, bool keep_selection = true) {
+    if (state == nullptr) {
+        return;
+    }
+    FormField* field = find_form_field(state, F_REQUIRED_STRATEGY);
+    if (field == nullptr || field->type != FormFieldType::Combo) {
+        return;
+    }
+    const RequiredStrategy prev = keep_selection ? required_strategy_from_form(state) : RequiredStrategy::None;
+    const int box_rows = std::max(1, form_field_int(state, F_BOX_ROWS, 3));
+    const int box_cols = std::max(1, form_field_int(state, F_BOX_COLS, 3));
+
+    field->options.clear();
+    field->option_payload.clear();
+    for (const auto& entry : required_strategy_ui_catalog()) {
+        if (entry.strategy != RequiredStrategy::None &&
+            !required_strategy_selectable_for_geometry(entry.strategy, box_rows, box_cols)) {
+            continue;
+        }
+        field->options.push_back(entry.label);
+        field->option_payload.push_back(static_cast<int>(entry.strategy));
+    }
+    if (field->options.empty()) {
+        field->options.push_back(L"(brak)");
+        field->option_payload.push_back(static_cast<int>(RequiredStrategy::None));
+    }
+
+    int next_index = 0;
+    if (keep_selection) {
+        for (int i = 0; i < static_cast<int>(field->option_payload.size()); ++i) {
+            if (field->option_payload[static_cast<size_t>(i)] == static_cast<int>(prev)) {
+                next_index = i;
+                break;
+            }
+        }
+    }
+    field->option_index = std::clamp(next_index, 0, static_cast<int>(field->options.size()) - 1);
+}
+
 void init_form_model(GuiAppState* state) {
     state->form_fields.clear();
     state->form_layout.clear();
@@ -354,16 +536,8 @@ void init_form_model(GuiAppState* state) {
     difficulty.key = F_DIFFICULTY;
     difficulty.type = FormFieldType::Combo;
     difficulty.label = L"difficulty_level_required:";
-    difficulty.options = {
-        L"1 - Naked/Hidden Single",
-        L"2 - Pointing / Box-Line",
-        L"3 - Pairs/Triples",
-        L"4 - Wings/Fishes basic",
-        L"5 - Swordfish/UR/BUG+1",
-        L"6 - Jellyfish/Chains",
-        L"7 - Medusa/AIC/Sue de Coq",
-        L"8 - MSLS/Exocet/Forcing Chains",
-        L"9 - Backtracking/Brutalny"};
+    difficulty.options.clear();
+    difficulty.option_payload.clear();
     difficulty.option_index = 0;
     add_field(std::move(difficulty));
 
@@ -378,7 +552,7 @@ void init_form_model(GuiAppState* state) {
     add_field(make_field(F_SEED, FormFieldType::Int, L"seed (0=random):", L"0"));
     add_field(make_field(F_RESEED_INTERVAL, FormFieldType::Int, L"reseed_interval_s (0=off, full worker reset):", L"0"));
     add_field(make_field(F_ATTEMPT_TIME_BUDGET, FormFieldType::Int, L"attempt_time_budget_s (0=brak limitu):", L"0"));
-    add_field(make_field(F_ATTEMPT_NODE_BUDGET, FormFieldType::Int, L"attempt_node_budget (0=auto):", L"0"));
+    add_field(make_field(F_ATTEMPT_NODE_BUDGET, FormFieldType::Int, L"attempt_node_budget (0=brak limitu):", L"0"));
     add_field(make_field(F_MAX_ATTEMPTS, FormFieldType::Int, L"max_attempts (0=bez limitu):", L"0"));
     add_field(make_field(F_MAX_TOTAL_TIME, FormFieldType::Int, L"max_total_time_s (0=bez limitu, CAŁE URUCHOMIENIE):", L"0"));
 
@@ -386,7 +560,8 @@ void init_form_model(GuiAppState* state) {
     strategy.key = F_REQUIRED_STRATEGY;
     strategy.type = FormFieldType::Combo;
     strategy.label = L"required_strategy (opcjonalnie):";
-    strategy.options = {L"(brak)", L"Naked Single", L"Hidden Single", L"Backtracking"};
+    strategy.options.clear();
+    strategy.option_payload.clear();
     strategy.option_index = 0;
     add_field(std::move(strategy));
 
@@ -452,6 +627,9 @@ void init_form_model(GuiAppState* state) {
     add_layout_field(F_OUTPUT_FILE);
     add_layout_field(F_SYMMETRY_CENTER);
     add_layout_field(F_SHOW_MONITOR);
+
+    refresh_difficulty_options(state, false);
+    refresh_required_strategy_options(state, false);
 }
 
 void append_log(GuiAppState* state, const std::wstring& line) {
@@ -514,28 +692,18 @@ bool browse_for_save_file(HWND owner, std::wstring& out_path) {
     return true;
 }
 
-RequiredStrategy required_strategy_from_index(int sel) {
-    switch (sel) {
-    case 1:
-        return RequiredStrategy::NakedSingle;
-    case 2:
-        return RequiredStrategy::HiddenSingle;
-    case 3:
-        return RequiredStrategy::Backtracking;
-    default:
-        return RequiredStrategy::None;
-    }
-}
-
 void apply_clues_preset(GuiAppState* state) {
     if (state == nullptr) {
         return;
     }
+    refresh_difficulty_options(state, true);
+    refresh_required_strategy_options(state, true);
     const int box_rows = std::max(1, form_field_int(state, F_BOX_ROWS, 3));
     const int box_cols = std::max(1, form_field_int(state, F_BOX_COLS, 3));
-    const int lvl = std::clamp(form_field_combo_index(state, F_DIFFICULTY, 8) + 1, 1, 9);
-    const RequiredStrategy required = required_strategy_from_index(form_field_combo_index(state, F_REQUIRED_STRATEGY, 0));
-    const int effective_budget_level = (required == RequiredStrategy::Backtracking) ? 9 : 1;
+    const int lvl = difficulty_level_from_form(state);
+    const RequiredStrategy required = required_strategy_from_form(state);
+    const int effective_budget_level = strategy_adjusted_level(lvl, required);
+    const bool unlimited_by_default = (effective_budget_level >= 3);
     const ClueRange range = resolve_auto_clue_range(box_rows, box_cols, lvl, required);
     const int min_clues = range.min_clues;
     const int max_clues = range.max_clues;
@@ -546,8 +714,8 @@ void apply_clues_preset(GuiAppState* state) {
     set_form_field_text(state, F_MIN_CLUES, std::to_wstring(min_clues));
     set_form_field_text(state, F_MAX_CLUES, std::to_wstring(max_clues));
     set_form_field_text(state, F_RESEED_INTERVAL, std::to_wstring(suggested_reseed_s));
-    set_form_field_text(state, F_ATTEMPT_TIME_BUDGET, std::to_wstring(suggested_attempt_time_s));
-    set_form_field_text(state, F_ATTEMPT_NODE_BUDGET, std::to_wstring(suggested_attempt_nodes));
+    set_form_field_text(state, F_ATTEMPT_TIME_BUDGET, unlimited_by_default ? L"0" : std::to_wstring(suggested_attempt_time_s));
+    set_form_field_text(state, F_ATTEMPT_NODE_BUDGET, unlimited_by_default ? L"0" : std::to_wstring(suggested_attempt_nodes));
     if (state->h_form_panel != nullptr) {
         InvalidateRect(state->h_form_panel, nullptr, TRUE);
     }
@@ -555,8 +723,9 @@ void apply_clues_preset(GuiAppState* state) {
         state,
         L"Preset: clues=" + std::to_wstring(min_clues) + L"-" + std::to_wstring(max_clues) +
             L", reseed=" + std::to_wstring(suggested_reseed_s) + L"s, attempt_time=" +
-            std::to_wstring(suggested_attempt_time_s) + L"s, attempt_nodes=" +
-            std::to_wstring(suggested_attempt_nodes) + L", budget_lvl=" +
+            (unlimited_by_default ? std::wstring(L"0(unlimited)") : std::to_wstring(suggested_attempt_time_s) + L"s") +
+            L", attempt_nodes=" +
+            (unlimited_by_default ? std::wstring(L"0(unlimited)") : std::to_wstring(suggested_attempt_nodes)) + L", budget_lvl=" +
             std::to_wstring(effective_budget_level));
 }
 
@@ -580,11 +749,13 @@ bool is_live_monitor_enabled(const GuiAppState* state) {
 }
 
 bool read_config_from_form(GuiAppState* state, GenerateRunConfig& cfg, std::map<std::string, std::string>& dict) {
+    refresh_difficulty_options(state, true);
+    refresh_required_strategy_options(state, true);
     cfg.box_rows = form_field_int(state, F_BOX_ROWS, 3);
     cfg.box_cols = form_field_int(state, F_BOX_COLS, 3);
     cfg.target_puzzles = form_field_u64(state, F_TARGET_PUZZLES, 100);
-    cfg.difficulty_level_required = std::clamp(form_field_combo_index(state, F_DIFFICULTY, 8) + 1, 1, 9);
-    cfg.required_strategy = required_strategy_from_index(form_field_combo_index(state, F_REQUIRED_STRATEGY, 0));
+    cfg.difficulty_level_required = difficulty_level_from_form(state);
+    cfg.required_strategy = required_strategy_from_form(state);
     const int min_clues_input = form_field_int(state, F_MIN_CLUES, 0);
     const int max_clues_input = form_field_int(state, F_MAX_CLUES, 0);
     const ClueRange auto_clues = resolve_auto_clue_range(
@@ -611,6 +782,24 @@ bool read_config_from_form(GuiAppState* state, GenerateRunConfig& cfg, std::map<
     if (cfg.box_rows <= 0 || cfg.box_cols <= 0) {
         MessageBoxW(state->hwnd, L"box_rows i box_cols musza byc > 0", L"Walidacja", MB_ICONWARNING);
         log_warn("gui.validation", "box_rows/box_cols must be > 0");
+        return false;
+    }
+    if (!difficulty_level_selectable_for_geometry(cfg.difficulty_level_required, cfg.box_rows, cfg.box_cols)) {
+        MessageBoxW(
+            state->hwnd,
+            L"Wybrany poziom trudnosci nie jest jeszcze dostepny runtime dla tej geometrii.",
+            L"Walidacja",
+            MB_ICONWARNING);
+        log_warn("gui.validation", "difficulty level not selectable for geometry");
+        return false;
+    }
+    if (!required_strategy_selectable_for_geometry(cfg.required_strategy, cfg.box_rows, cfg.box_cols)) {
+        MessageBoxW(
+            state->hwnd,
+            L"required_strategy nie jest dostepna dla tej geometrii.",
+            L"Walidacja",
+            MB_ICONWARNING);
+        log_warn("gui.validation", "required_strategy not selectable for geometry");
         return false;
     }
     if (cfg.max_clues < cfg.min_clues) {
@@ -1260,10 +1449,12 @@ void update_suggestions_for_grid_size(GuiAppState* state) {
     if (state == nullptr) {
         return;
     }
+    refresh_difficulty_options(state, true);
+    refresh_required_strategy_options(state, true);
     const int box_rows = form_field_int(state, F_BOX_ROWS, 3);
     const int box_cols = form_field_int(state, F_BOX_COLS, 3);
-    const int difficulty = std::clamp(form_field_combo_index(state, F_DIFFICULTY, 8) + 1, 1, 9);
-    const RequiredStrategy required = required_strategy_from_index(form_field_combo_index(state, F_REQUIRED_STRATEGY, 0));
+    const int difficulty = difficulty_level_from_form(state);
+    const RequiredStrategy required = required_strategy_from_form(state);
     const ClueRange suggested_clues = resolve_auto_clue_range(box_rows, box_cols, difficulty, required);
     
     // Update min/max clues fields (only if user hasn't modified them)

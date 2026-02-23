@@ -11,7 +11,10 @@
 namespace sudoku_hpc::geometria {
 
 using sudoku_geometrie::GeometriaInfo;
-inline constexpr int LICZBA_GEOMETRII = sudoku_geometrie::LICZBA_GEOMETRII;
+
+inline int liczba_geometrii() {
+    return sudoku_geometrie::liczba_geometrii();
+}
 
 struct GeometrySpec {
     int n = 0;
@@ -49,8 +52,9 @@ inline const std::vector<GeometrySpec>& all_geometries() {
     zainicjalizuj_geometrie();
     static const std::vector<GeometrySpec> cache = [] {
         std::vector<GeometrySpec> out;
-        out.reserve(static_cast<size_t>(LICZBA_GEOMETRII));
-        for (int i = 0; i < LICZBA_GEOMETRII; ++i) {
+        const int count = sudoku_geometrie::liczba_geometrii();
+        out.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i) {
             const auto& g = sudoku_geometrie::get_geometria(i);
             out.push_back(
                 {g.N,

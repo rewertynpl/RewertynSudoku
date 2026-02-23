@@ -1,13 +1,13 @@
 param(
     [string]$StageName = "stage_asym_pairs",
-    [int]$DurationSec = 20,
+    [int]$DurationSec = 15,
     [int]$BoxRows = 3,
     [int]$BoxCols = 3,
     [int]$Difficulty = 1,
     [string]$CpuBackend = "avx2",
     [Int64]$Seed = 123456,
-    [int]$MinThreads = 1,
-    [int]$MaxThreads = 0
+    [int]$MinThreads = 16,
+    [int]$MaxThreads = 16
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,7 +17,15 @@ function Build-Exe {
         [string]$SourceDir,
         [string]$OutExe
     )
-    $cmd = "g++ -std=c++20 -O3 -march=native -flto -pthread -Wno-stringop-overread main.cpp -o `"$OutExe`" -lcomctl32 -lcomdlg32 -lshell32 -lole32 -lgdi32 -lpsapi"
+    $entry = ""
+    if (Test-Path (Join-Path $SourceDir "main.cpp")) {
+        $entry = "main.cpp"
+    } elseif (Test-Path (Join-Path $SourceDir "Sudoku Level Generator RewertynPL v0.1.cpp")) {
+        $entry = "`"Sudoku Level Generator RewertynPL v0.1.cpp`""
+    } else {
+        throw "Missing entry source in $SourceDir (expected main.cpp or Sudoku Level Generator RewertynPL v0.1.cpp)"
+    }
+    $cmd = "g++ -std=c++20 -O3 -march=native -flto -pthread -Wno-stringop-overread $entry -o `"$OutExe`" -lcomctl32 -lcomdlg32 -lshell32 -lole32 -lgdi32 -lpsapi"
     Write-Host "BUILD: $SourceDir -> $OutExe"
     Push-Location $SourceDir
     try {
@@ -114,7 +122,7 @@ $afterExe = Join-Path $repoRoot "sudoku_gen_after.exe"
 Build-Exe -SourceDir $snapshotRoot -OutExe $beforeExe
 Build-Exe -SourceDir $repoRoot -OutExe $afterExe
 
-$outFolder = Join-Path $repoRoot "plikiTMP\testy\perf_before_after_20s"
+$outFolder = Join-Path $repoRoot ("plikiTMP\\testy\\perf_before_after_{0}s" -f $DurationSec)
 New-Item -ItemType Directory -Force -Path $outFolder | Out-Null
 
 $rows = @()
@@ -144,8 +152,8 @@ for ($t = $MinThreads; $t -le $MaxThreads; ++$t) {
 }
 
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$csvPath = Join-Path $reportDir "perf_before_after_20s_${stamp}.csv"
-$txtPath = Join-Path $reportDir "perf_before_after_20s_${stamp}.txt"
+$csvPath = Join-Path $reportDir ("perf_before_after_{0}s_{1}.csv" -f $DurationSec, $stamp)
+$txtPath = Join-Path $reportDir ("perf_before_after_{0}s_{1}.txt" -f $DurationSec, $stamp)
 $rows | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $csvPath
 
 $avgBefore = ($rows | Measure-Object -Property before_rate -Average).Average
@@ -153,7 +161,7 @@ $avgAfter = ($rows | Measure-Object -Property after_rate -Average).Average
 $avgDelta = ($rows | Measure-Object -Property delta_pct -Average).Average
 
 $txt = @()
-$txt += "PERF BEFORE/AFTER 20s (sequential, per-thread)"
+$txt += ("PERF BEFORE/AFTER {0}s (sequential, per-thread)" -f $DurationSec)
 $txt += "stage_snapshot=$StageName"
 $txt += "threads=$MinThreads..$MaxThreads"
 $txt += "geometry=${BoxRows}x${BoxCols}"

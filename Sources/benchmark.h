@@ -553,7 +553,7 @@ public:
                    to_rows_a3(data.table_a3))
             << "\n\n";
 
-        out << "Tabela B: Min/Max clues (4x4..36x36, poziom 1-8)\n";
+        out << "Tabela B: Min/Max clues (4x4..64x64, poziom 1-8)\n";
         out << render_table(
                    {
                        {"size", Align::Right},

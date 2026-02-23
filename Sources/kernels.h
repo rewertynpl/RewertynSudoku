@@ -1,4 +1,6 @@
-﻿#pragma once
+﻿//Author copyright Marcin Matysek (Rewertyn)
+
+#pragma once
 
 #include <cstdint>
 #include <vector>

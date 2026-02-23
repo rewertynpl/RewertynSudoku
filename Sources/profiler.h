@@ -39,7 +39,8 @@ inline const char* profiler_stage_name(ProfilerStage stage) {
     }
 }
 
-struct StageMetrics {
+// alignas(128) to avoid inter-core false sharing for hot stage counters.
+struct alignas(128) StageMetrics {
     std::atomic<uint64_t> call_count{0};
     std::atomic<uint64_t> total_elapsed_ns{0};
     std::atomic<uint64_t> min_elapsed_ns{std::numeric_limits<uint64_t>::max()};
