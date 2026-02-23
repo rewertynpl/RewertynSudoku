@@ -36,6 +36,7 @@ struct WorkerRow {
     std::string worker = "worker_00";
     int clues = 0;
     long long seed = 0;
+    uint64_t last_reseed_steady_ns = 0;
     uint64_t resets = 0;
     uint64_t applied = 0;
     double reset_lag = 0.0;
@@ -374,10 +375,26 @@ private:
 
     std::string render_worker_table() const {
         std::vector<std::vector<std::string>> rows;
+        const auto now_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
         {
             std::lock_guard<std::mutex> lock(workers_mu_);
             rows.reserve(workers_.size());
             for (const auto& w : workers_) {
+                double reset_lag = w.reset_lag;
+                double lag_max = w.lag_max;
+                double reset_in_s = w.reset_in_s;
+                if (w.reseed_interval_s > 0 && w.last_reseed_steady_ns > 0 && now_ns >= w.last_reseed_steady_ns) {
+                    const double elapsed_s =
+                        static_cast<double>(now_ns - w.last_reseed_steady_ns) / 1'000'000'000.0;
+                    const double interval_s = static_cast<double>(w.reseed_interval_s);
+                    const double lag = std::max(0.0, elapsed_s - interval_s);
+                    reset_lag = lag;
+                    lag_max = std::max(lag_max, lag);
+                    reset_in_s = std::max(0.0, interval_s - elapsed_s);
+                }
                 rows.push_back(
                     {
                         w.worker,
@@ -385,9 +402,9 @@ private:
                         std::to_string(w.seed),
                         std::to_string(w.resets),
                         std::to_string(w.applied),
-                        format_fixed(w.reset_lag, 2),
-                        format_fixed(w.lag_max, 2),
-                        format_fixed(w.reset_in_s, 2),
+                        format_fixed(reset_lag, 2),
+                        format_fixed(lag_max, 2),
+                        format_fixed(reset_in_s, 2),
                         w.status,
                         std::to_string(w.dead_ends),
                         std::to_string(w.max_depth),

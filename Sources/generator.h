@@ -902,6 +902,10 @@ static bool evaluate_required_strategy_contract_generic(
 }
 
 struct AttemptPerfStats {
+    uint64_t solved_elapsed_ns = 0;
+    uint64_t dig_elapsed_ns = 0;
+    uint64_t prefilter_elapsed_ns = 0;
+    uint64_t logic_elapsed_ns = 0;
     uint64_t uniqueness_calls = 0;
     uint64_t uniqueness_nodes = 0;
     uint64_t uniqueness_elapsed_ns = 0;
@@ -973,7 +977,15 @@ static bool generate_one_generic(
     
     SearchAbortControl* budget_ptr = budget_enabled ? &budget : nullptr;
 
-    if (!solved.generate(topo, rng, candidate.solution, budget_ptr)) {
+    const auto solved_t0 = std::chrono::steady_clock::now();
+    const bool solved_ok = solved.generate(topo, rng, candidate.solution, budget_ptr);
+    if (collect_perf) {
+        perf_out->solved_elapsed_ns += static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - solved_t0)
+                .count());
+    }
+    if (!solved_ok) {
         if (budget_ptr != nullptr && budget_ptr->aborted()) {
             if (budget_ptr->aborted_by_pause) {
                 reason = RejectReason::None;
@@ -987,8 +999,24 @@ static bool generate_one_generic(
         return false;
     }
     
+    const auto dig_t0 = std::chrono::steady_clock::now();
     dig.dig_into(candidate.solution, topo, cfg, rng, candidate.puzzle, candidate.clues);
-    if (!prefilter.check(candidate.puzzle, topo, cfg.min_clues, cfg.max_clues)) {
+    if (collect_perf) {
+        perf_out->dig_elapsed_ns += static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - dig_t0)
+                .count());
+    }
+
+    const auto prefilter_t0 = std::chrono::steady_clock::now();
+    const bool prefilter_ok = prefilter.check(candidate.puzzle, topo, cfg.min_clues, cfg.max_clues);
+    if (collect_perf) {
+        perf_out->prefilter_elapsed_ns += static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - prefilter_t0)
+                .count());
+    }
+    if (!prefilter_ok) {
         reason = RejectReason::Prefilter;
         return false;
     }
@@ -1020,7 +1048,14 @@ static bool generate_one_generic(
     }
     
     const bool capture_logic_solution = replay_validation_enabled;
+    const auto logic_t0 = std::chrono::steady_clock::now();
     const GenericLogicCertifyResult logic_result = logic.certify(candidate.puzzle, topo, budget_ptr, capture_logic_solution);
+    if (collect_perf) {
+        perf_out->logic_elapsed_ns += static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - logic_t0)
+                .count());
+    }
     if (logic_result.timed_out) {
         if (budget_ptr != nullptr && budget_ptr->aborted_by_pause) {
             reason = RejectReason::None;
@@ -1609,8 +1644,21 @@ GenerateRunResult run_generic_sudoku(
         
         auto last_reseed_time = std::chrono::steady_clock::now();
         auto last_monitor_push = std::chrono::steady_clock::now();
+        auto last_worker_push = std::chrono::steady_clock::now();
+        auto current_attempt_start = std::chrono::steady_clock::now();
+        bool attempt_in_progress = false;
         uint64_t reseed_counter = 0;
         uint64_t worker_applied = 0;
+        uint64_t worker_dead_ends = 0;
+        uint64_t worker_attempts_finished = 0;
+        uint64_t worker_uniqueness_nodes_sum = 0;
+        uint64_t worker_uniqueness_elapsed_ns_sum = 0;
+        double worker_attempt_elapsed_ms_sum = 0.0;
+        double worker_stage_solved_ms_sum = 0.0;
+        double worker_stage_dig_ms_sum = 0.0;
+        double worker_stage_prefilter_ms_sum = 0.0;
+        double worker_stage_logic_ms_sum = 0.0;
+        double worker_stage_uniqueness_ms_sum = 0.0;
         bool paused_state = false;
 
         WorkerRow worker{};
@@ -1621,12 +1669,46 @@ GenerateRunResult run_generic_sudoku(
         }
         worker.seed = local_seed;
         worker.status = "running";
+        worker.last_reseed_steady_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(last_reseed_time.time_since_epoch()).count());
         worker.reseed_interval_s = cfg.reseed_interval_s;
-        worker.attempt_time_budget_s = cfg.attempt_time_budget_s;
-        worker.attempt_node_budget = cfg.attempt_node_budget;
-        if (monitor_enabled) {
-            monitor->set_worker_row(static_cast<size_t>(tid), worker);
-        }
+        worker.attempt_time_budget_s = 0.0;
+        worker.attempt_node_budget = 0;
+        auto ns_to_ms = [](uint64_t ns) -> double {
+            return static_cast<double>(ns) / 1'000'000.0;
+        };
+        auto refresh_worker_dynamic = [&](const std::chrono::steady_clock::time_point& now_tp) {
+            const double elapsed_since_reseed_s = std::chrono::duration<double>(now_tp - last_reseed_time).count();
+            worker.last_reseed_steady_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(last_reseed_time.time_since_epoch()).count());
+            if (reseed_enabled) {
+                const double interval_s = static_cast<double>(cfg.reseed_interval_s);
+                worker.reset_in_s = std::max(0.0, interval_s - elapsed_since_reseed_s);
+                worker.reset_lag = std::max(0.0, elapsed_since_reseed_s - interval_s);
+                worker.lag_max = std::max(worker.lag_max, worker.reset_lag);
+            } else {
+                worker.reset_in_s = 0.0;
+                worker.reset_lag = 0.0;
+                worker.lag_max = 0.0;
+            }
+            if (attempt_in_progress) {
+                worker.attempt_time_budget_s = std::chrono::duration<double>(now_tp - current_attempt_start).count();
+            } else {
+                worker.attempt_time_budget_s = 0.0;
+            }
+            worker.attempt_node_budget = worker_uniqueness_nodes_sum;
+        };
+        auto maybe_publish_worker = [&](const std::chrono::steady_clock::time_point& now_tp, bool force) {
+            refresh_worker_dynamic(now_tp);
+            if (!monitor_enabled) {
+                return;
+            }
+            if (force || (now_tp - last_worker_push) >= std::chrono::milliseconds(500)) {
+                monitor->set_worker_row(static_cast<size_t>(tid), worker);
+                last_worker_push = now_tp;
+            }
+        };
+        maybe_publish_worker(std::chrono::steady_clock::now(), true);
         
         started_workers.fetch_add(1, std::memory_order_relaxed);
         while (started_workers.load(std::memory_order_relaxed) < thread_count) {
@@ -1657,35 +1739,38 @@ GenerateRunResult run_generic_sudoku(
                 if (!paused_state) {
                     paused_state = true;
                     worker.status = "paused";
-                    if (monitor_enabled) {
-                        monitor->set_worker_row(static_cast<size_t>(tid), worker);
-                    }
+                    maybe_publish_worker(std::chrono::steady_clock::now(), true);
                 }
+                maybe_publish_worker(std::chrono::steady_clock::now(), false);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             } else if (paused_state) {
                 paused_state = false;
                 worker.status = "running";
-                if (monitor_enabled) {
-                    monitor->set_worker_row(static_cast<size_t>(tid), worker);
-                }
+                maybe_publish_worker(std::chrono::steady_clock::now(), true);
             }
 
             if (reseed_enabled || has_global_time_limit) {
                 const auto now_tp = std::chrono::steady_clock::now();
 
                 if (reseed_enabled && (now_tp - last_reseed_time) >= reseed_interval) {
+                    const long long old_seed = local_seed;
                     worker_seed_state = splitmix64(worker_seed_state);
                     reseed_counter = worker_seed_state;
                     local_seed = bounded_positive_seed_i64(reseed_counter);
                     rng.seed(static_cast<uint64_t>(local_seed));
                     last_reseed_time = now_tp;
-                    ++local_delta.reseeds;
+                    reseeds_total.fetch_add(1, std::memory_order_relaxed);
                     worker.resets += 1;
                     worker.seed = local_seed;
-                    if (monitor_enabled) {
-                        monitor->set_worker_row(static_cast<size_t>(tid), worker);
-                    }
+                    log_info(
+                        "run_generic.reseed",
+                        "tid=" + std::to_string(tid) +
+                            " old_seed=" + std::to_string(old_seed) +
+                            " new_seed=" + std::to_string(local_seed) +
+                            " interval_s=" + std::to_string(cfg.reseed_interval_s) +
+                            " reason=reseed_interval_s_elapsed");
+                    maybe_publish_worker(now_tp, true);
                 }
 
                 if (has_global_time_limit) {
@@ -1719,7 +1804,11 @@ GenerateRunResult run_generic_sudoku(
             }
 
             ++local_attempts_done;
-            ++local_delta.attempts;
+            attempts.fetch_add(1, std::memory_order_relaxed);
+            current_attempt_start = std::chrono::steady_clock::now();
+            attempt_in_progress = true;
+            maybe_publish_worker(current_attempt_start, false);
+            const auto attempt_t0 = current_attempt_start;
 
             RejectReason reason = RejectReason::None;
             RequiredStrategyAttemptInfo strategy_info{};
@@ -1731,10 +1820,20 @@ GenerateRunResult run_generic_sudoku(
                 solved, dig, prefilter, logic, uniq,
                 &force_abort.value, &attempt_timed_out, external_cancel, external_paused,
                 nullptr, nullptr, nullptr, &perf_stats);
+            attempt_in_progress = false;
+            const auto attempt_elapsed_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - attempt_t0).count();
+            ++worker_attempts_finished;
+            worker_attempt_elapsed_ms_sum += attempt_elapsed_ms;
+            worker.avg_attempt_ms = worker_attempt_elapsed_ms_sum / static_cast<double>(worker_attempts_finished);
 
             // Aktualizacja metryk
-            if (strategy_info.required_strategy_use_confirmed) ++local_delta.analyzed_required;
-            if (strategy_info.required_strategy_hit_confirmed) ++local_delta.required_hits;
+            if (strategy_info.required_strategy_use_confirmed) {
+                analyzed_required_strategy.fetch_add(1, std::memory_order_relaxed);
+            }
+            if (strategy_info.required_strategy_hit_confirmed) {
+                required_strategy_hits.fetch_add(1, std::memory_order_relaxed);
+            }
             local_delta.uniqueness_calls += perf_stats.uniqueness_calls;
             local_delta.uniqueness_nodes += perf_stats.uniqueness_nodes;
             local_delta.uniqueness_elapsed_ns += perf_stats.uniqueness_elapsed_ns;
@@ -1743,6 +1842,24 @@ GenerateRunResult run_generic_sudoku(
             local_delta.naked_hit += perf_stats.strategy_naked_hit;
             local_delta.hidden_use += perf_stats.strategy_hidden_use;
             local_delta.hidden_hit += perf_stats.strategy_hidden_hit;
+            worker_uniqueness_nodes_sum += perf_stats.uniqueness_nodes;
+            worker_uniqueness_elapsed_ns_sum += perf_stats.uniqueness_elapsed_ns;
+            worker.backtrack_count = worker_uniqueness_nodes_sum;
+            if (worker_uniqueness_nodes_sum > 0) {
+                worker.avg_node_ms =
+                    (static_cast<double>(worker_uniqueness_elapsed_ns_sum) / 1'000'000.0) /
+                    static_cast<double>(worker_uniqueness_nodes_sum);
+            }
+            worker_stage_solved_ms_sum += ns_to_ms(perf_stats.solved_elapsed_ns);
+            worker_stage_dig_ms_sum += ns_to_ms(perf_stats.dig_elapsed_ns);
+            worker_stage_prefilter_ms_sum += ns_to_ms(perf_stats.prefilter_elapsed_ns);
+            worker_stage_logic_ms_sum += ns_to_ms(perf_stats.logic_elapsed_ns);
+            worker_stage_uniqueness_ms_sum += ns_to_ms(perf_stats.uniqueness_elapsed_ns);
+            worker.stage_solved_ms = worker_stage_solved_ms_sum / static_cast<double>(worker_attempts_finished);
+            worker.stage_dig_ms = worker_stage_dig_ms_sum / static_cast<double>(worker_attempts_finished);
+            worker.stage_prefilter_ms = worker_stage_prefilter_ms_sum / static_cast<double>(worker_attempts_finished);
+            worker.stage_logic_ms = worker_stage_logic_ms_sum / static_cast<double>(worker_attempts_finished);
+            worker.stage_uniqueness_ms = worker_stage_uniqueness_ms_sum / static_cast<double>(worker_attempts_finished);
 
             if (ok) {
                 const uint64_t acc_before = accepted.fetch_add(1, std::memory_order_relaxed);
@@ -1770,18 +1887,39 @@ GenerateRunResult run_generic_sudoku(
                     }
                 }
             } else {
-                ++local_delta.rejected;
+                rejected.fetch_add(1, std::memory_order_relaxed);
+                if (reason != RejectReason::None) {
+                    ++worker_dead_ends;
+                }
                 switch (reason) {
-                case RejectReason::Prefilter: ++local_delta.reject_prefilter; break;
-                case RejectReason::Logic: ++local_delta.reject_logic; break;
-                case RejectReason::Uniqueness: ++local_delta.reject_uniqueness; break;
-                case RejectReason::Strategy: ++local_delta.reject_strategy; break;
-                case RejectReason::Replay: ++local_delta.reject_replay; break;
-                case RejectReason::DistributionBias: ++local_delta.reject_distribution_bias; break;
-                case RejectReason::UniquenessBudget: ++local_delta.reject_uniqueness_budget; break;
+                case RejectReason::Prefilter:
+                    reject_prefilter.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                case RejectReason::Logic:
+                    reject_logic.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                case RejectReason::Uniqueness:
+                    reject_uniqueness.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                case RejectReason::Strategy:
+                    reject_strategy.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                case RejectReason::Replay:
+                    reject_replay.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                case RejectReason::DistributionBias:
+                    reject_distribution_bias.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                case RejectReason::UniquenessBudget:
+                    reject_uniqueness_budget.fetch_add(1, std::memory_order_relaxed);
+                    break;
                 case RejectReason::None: break;
                 }
             }
+            worker.dead_ends = worker_dead_ends;
+            worker.success_rate_pct = local_attempts_done > 0
+                ? (100.0 * static_cast<double>(worker_applied) / static_cast<double>(local_attempts_done))
+                : 0.0;
 
             // Popychanie metryk co 256 iteracji (szybkie flush)
             if ((local_attempts_done & 255ULL) == 0ULL) {
@@ -1808,9 +1946,7 @@ GenerateRunResult run_generic_sudoku(
                     last_monitor_push = now_tp;
                 }
             }
-            if (monitor_enabled && ((local_attempts_done & 127ULL) == 0ULL)) {
-                monitor->set_worker_row(static_cast<size_t>(tid), worker);
-            }
+            maybe_publish_worker(std::chrono::steady_clock::now(), false);
         }
         
         // Zrzut reszty metryk na koniec wątku
@@ -1821,6 +1957,7 @@ GenerateRunResult run_generic_sudoku(
             ? (has_external_cancel && external_cancel->load(std::memory_order_relaxed) ? "cancel_requested" : "stopped")
             : "finished";
         if (monitor_enabled) {
+            refresh_worker_dynamic(std::chrono::steady_clock::now());
             monitor->set_worker_row(static_cast<size_t>(tid), worker);
         }
     };
@@ -2017,9 +2154,75 @@ double suggest_time_budget_s(int box_rows, int box_cols, int level) {
     const int safe_box_rows = std::max(1, box_rows);
     const int safe_box_cols = std::max(1, box_cols);
     const int n = safe_box_rows * safe_box_cols;
-    const double level_scale = 1.0 + 0.08 * static_cast<double>(std::clamp(level, 1, 9) - 1);
+    const int lvl = std::clamp(level, 1, 9);
+    const double level_scale = 1.0 + 0.08 * static_cast<double>(lvl - 1);
     const double asymmetry_scale = std::clamp(1.0 + 0.30 * (asymmetry_ratio_for_geometry(safe_box_rows, safe_box_cols) - 1.0), 1.0, 3.0);
-    return suggest_time_budget_base_s(n) * level_scale * asymmetry_scale;
+    double high_level_scale = 1.0;
+    if (lvl >= 8) high_level_scale = 1.80;
+    else if (lvl == 7) high_level_scale = 1.40;
+    else if (lvl == 6) high_level_scale = 1.20;
+
+    double large_grid_scale = 1.0;
+    if (n >= 36) large_grid_scale = (lvl >= 8) ? 4.00 : 2.50;
+    else if (n >= 30) large_grid_scale = (lvl >= 8) ? 2.60 : 1.90;
+    else if (n >= 25) large_grid_scale = 1.35;
+    else if (n >= 20) large_grid_scale = 1.15;
+
+    const double suggested = suggest_time_budget_base_s(n) * level_scale * asymmetry_scale * high_level_scale * large_grid_scale;
+    return std::clamp(suggested, 0.05, 14400.0);
+}
+
+inline int suggest_attempt_time_budget_seconds(int box_rows, int box_cols, int level) {
+    const double suggested = suggest_time_budget_s(box_rows, box_cols, level);
+    const double rounded = std::ceil(std::max(1.0, suggested));
+    return static_cast<int>(std::clamp(rounded, 1.0, 86400.0));
+}
+
+inline int suggest_reseed_interval_s(int box_rows, int box_cols, int level) {
+    const int safe_box_rows = std::max(1, box_rows);
+    const int safe_box_cols = std::max(1, box_cols);
+    const int n = safe_box_rows * safe_box_cols;
+    const int lvl = std::clamp(level, 1, 9);
+
+    int reseed_s = 0;
+    if (n >= 36) reseed_s = (lvl >= 8) ? 20 : 12;
+    else if (n >= 30) reseed_s = (lvl >= 8) ? 14 : 10;
+    else if (n >= 25) reseed_s = 8;
+    else if (n >= 16) reseed_s = 5;
+    else if (n >= 12) reseed_s = 3;
+
+    const double asymmetry = asymmetry_ratio_for_geometry(safe_box_rows, safe_box_cols);
+    if (reseed_s > 0 && asymmetry >= 2.5) {
+        reseed_s += 2;
+    }
+    return reseed_s;
+}
+
+inline uint64_t suggest_attempt_node_budget(int box_rows, int box_cols, int level) {
+    const int safe_box_rows = std::max(1, box_rows);
+    const int safe_box_cols = std::max(1, box_cols);
+    const int n = safe_box_rows * safe_box_cols;
+    const int nn = n * n;
+    const int lvl = std::clamp(level, 1, 9);
+    const double asymmetry = asymmetry_ratio_for_geometry(safe_box_rows, safe_box_cols);
+
+    const double base_nodes = std::clamp(static_cast<double>(nn) * 4000.0, 200000.0, 25000000.0);
+    const double level_scale = 1.0 + 0.22 * static_cast<double>(lvl - 1);
+    const double asymmetry_scale = std::clamp(1.0 + 0.25 * (asymmetry - 1.0), 1.0, 3.0);
+
+    double large_grid_scale = 1.0;
+    if (n >= 36) large_grid_scale = (lvl >= 8) ? 4.00 : 2.50;
+    else if (n >= 30) large_grid_scale = (lvl >= 8) ? 2.70 : 1.90;
+    else if (n >= 25) large_grid_scale = 1.35;
+
+    double suggested = base_nodes * level_scale * asymmetry_scale * large_grid_scale;
+    if (n >= 36 && lvl >= 8) suggested = std::max(suggested, 100000000.0);
+    else if (n >= 36) suggested = std::max(suggested, 45000000.0);
+    else if (n >= 30) suggested = std::max(suggested, 25000000.0);
+    else if (n >= 25) suggested = std::max(suggested, 12000000.0);
+
+    suggested = std::clamp(suggested, 200000.0, 500000000.0);
+    return static_cast<uint64_t>(std::llround(suggested));
 }
 
 inline GenerationProfile resolve_generation_profile(

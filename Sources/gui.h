@@ -364,7 +364,7 @@ void init_form_model(GuiAppState* state) {
         L"7 - Medusa/AIC/Sue de Coq",
         L"8 - MSLS/Exocet/Forcing Chains",
         L"9 - Backtracking/Brutalny"};
-    difficulty.option_index = 8;
+    difficulty.option_index = 0;
     add_field(std::move(difficulty));
 
     FormField preset;
@@ -535,15 +535,29 @@ void apply_clues_preset(GuiAppState* state) {
     const int box_cols = std::max(1, form_field_int(state, F_BOX_COLS, 3));
     const int lvl = std::clamp(form_field_combo_index(state, F_DIFFICULTY, 8) + 1, 1, 9);
     const RequiredStrategy required = required_strategy_from_index(form_field_combo_index(state, F_REQUIRED_STRATEGY, 0));
+    const int effective_budget_level = (required == RequiredStrategy::Backtracking) ? 9 : 1;
     const ClueRange range = resolve_auto_clue_range(box_rows, box_cols, lvl, required);
     const int min_clues = range.min_clues;
     const int max_clues = range.max_clues;
+    const int suggested_reseed_s = suggest_reseed_interval_s(box_rows, box_cols, effective_budget_level);
+    const int suggested_attempt_time_s = suggest_attempt_time_budget_seconds(box_rows, box_cols, effective_budget_level);
+    const uint64_t suggested_attempt_nodes = suggest_attempt_node_budget(box_rows, box_cols, effective_budget_level);
+
     set_form_field_text(state, F_MIN_CLUES, std::to_wstring(min_clues));
     set_form_field_text(state, F_MAX_CLUES, std::to_wstring(max_clues));
+    set_form_field_text(state, F_RESEED_INTERVAL, std::to_wstring(suggested_reseed_s));
+    set_form_field_text(state, F_ATTEMPT_TIME_BUDGET, std::to_wstring(suggested_attempt_time_s));
+    set_form_field_text(state, F_ATTEMPT_NODE_BUDGET, std::to_wstring(suggested_attempt_nodes));
     if (state->h_form_panel != nullptr) {
         InvalidateRect(state->h_form_panel, nullptr, TRUE);
     }
-    append_log(state, L"Zastosowano preset clues.");
+    append_log(
+        state,
+        L"Preset: clues=" + std::to_wstring(min_clues) + L"-" + std::to_wstring(max_clues) +
+            L", reseed=" + std::to_wstring(suggested_reseed_s) + L"s, attempt_time=" +
+            std::to_wstring(suggested_attempt_time_s) + L"s, attempt_nodes=" +
+            std::to_wstring(suggested_attempt_nodes) + L", budget_lvl=" +
+            std::to_wstring(effective_budget_level));
 }
 
 void set_running_state(GuiAppState* state, bool running) {
@@ -661,13 +675,15 @@ void start_generation(GuiAppState* state) {
         std::cout << "  " << k << " = " << v << "\n";
     }
     
-    // Show suggestions for time budget and clues (informational only).
+    // Show suggestions for profile and currently configured attempt budgets.
     const double suggested_time = suggest_time_budget_s(cfg.box_rows, cfg.box_cols, cfg.difficulty_level_required);
     const ClueRange suggested_clues = resolve_auto_clue_range(cfg.box_rows, cfg.box_cols, cfg.difficulty_level_required, cfg.required_strategy);
     
-    std::wcout << L"\n[SUGESTIA] Dla rozmiaru " << (cfg.box_rows * cfg.box_cols) << L"x" << (cfg.box_rows * cfg.box_cols) << L" (nie ustawiane automatycznie):\n";
-    std::wcout << L"  attempt_time_budget_s: " << static_cast<int>(suggested_time) << L"s (podpowiedz)\n";
-    std::wcout << L"  min_clues: " << suggested_clues.min_clues << L", max_clues: " << suggested_clues.max_clues << L"\n\n";
+    std::wcout << L"\n[SUGESTIA] Dla rozmiaru " << (cfg.box_rows * cfg.box_cols) << L"x" << (cfg.box_rows * cfg.box_cols) << L":\n";
+    std::wcout << L"  attempt_time_budget_s: sugerowane=" << static_cast<int>(std::ceil(suggested_time))
+               << L"s, ustawione=" << static_cast<int>(cfg.attempt_time_budget_s) << L"s\n";
+    std::wcout << L"  min_clues: sugerowane=" << suggested_clues.min_clues << L", ustawione=" << cfg.min_clues << L"\n";
+    std::wcout << L"  max_clues: sugerowane=" << suggested_clues.max_clues << L", ustawione=" << cfg.max_clues << L"\n\n";
     
     append_log(state, L"Start generation...");
     log_info(
@@ -690,7 +706,7 @@ void start_generation(GuiAppState* state) {
     state->paused.store(false, std::memory_order_relaxed);
     SetWindowTextW(state->h_pause, L"Pauza");
     set_running_state(state, true);
-    SetTimer(state->hwnd, IDT_MONITOR_REFRESH, 8000, nullptr);
+    SetTimer(state->hwnd, IDT_MONITOR_REFRESH, 500, nullptr);
     set_monitor_text(state, L"Monitor start...");
     const bool live_monitor_on = is_live_monitor_enabled(state);
     EnableWindow(state->h_monitor, live_monitor_on ? TRUE : FALSE);
@@ -700,19 +716,14 @@ void start_generation(GuiAppState* state) {
 
     state->run_thread = std::jthread([state, cfg, live_monitor_on]() {
         auto monitor = std::make_shared<ConsoleStatsMonitor>();
-        //const int effective_threads = cfg.threads > 0 ? cfg.threads : std::max(1u, std::thread::hardware_concurrency());
-        //monitor->set_target(cfg.target_puzzles);
-        //monitor->set_active_workers(effective_threads);
-        if (live_monitor_on) {
-            monitor->start_ui_thread(8000);
-        }
+        monitor->start_ui_thread(5000);
         {
             std::lock_guard<std::mutex> lock(state->monitor_mu);
             state->gui_monitor = monitor;
         }
         GenerateRunResult result = run_generic_sudoku(
             cfg,
-            live_monitor_on ? monitor.get() : nullptr,
+            monitor.get(),
             &state->cancel_requested,
             &state->paused,
             [hwnd = state->hwnd](uint64_t accepted, uint64_t target) {
@@ -726,9 +737,7 @@ void start_generation(GuiAppState* state) {
             "run done accepted=" + std::to_string(result.accepted) +
                 " written=" + std::to_string(result.written) +
                 " attempts=" + std::to_string(result.attempts));
-        if (live_monitor_on) {
-            monitor->stop_ui_thread();
-        }
+        monitor->stop_ui_thread();
         {
             std::lock_guard<std::mutex> lock(state->monitor_mu);
             state->gui_monitor.reset();
@@ -1239,7 +1248,8 @@ void form_set_hover_field(GuiAppState* state, int field_key) {
 }
 
 bool form_affects_clues_preset(int field_key) {
-    return field_key == F_BOX_ROWS ||
+    return field_key == F_CLUES_PRESET ||
+           field_key == F_BOX_ROWS ||
            field_key == F_BOX_COLS ||
            field_key == F_DIFFICULTY ||
            field_key == F_REQUIRED_STRATEGY;
@@ -1744,7 +1754,11 @@ LRESULT CALLBACK form_panel_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                     form_request_inline_close(state, false);
                     return 0;
                 }
-                if ((code == CBN_KILLFOCUS || code == CBN_CLOSEUP) && !state->inline_close_posted) {
+                if (code == CBN_KILLFOCUS && !state->inline_close_posted) {
+                    const LRESULT dropped = SendMessageW(state->h_inline_editor, CB_GETDROPPEDSTATE, 0, 0);
+                    if (dropped != 0) {
+                        return 0;
+                    }
                     form_request_inline_close(state, true);
                     return 0;
                 }
@@ -1962,6 +1976,7 @@ void create_gui_controls(GuiAppState* s) {
     layout_gui_controls(s);
     form_set_focused_field(s, form_first_focusable_key(s), false);
     sync_live_monitor_visual_state(s);
+    apply_clues_preset(s);
 }
 
 LRESULT CALLBACK gui_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -2040,10 +2055,6 @@ LRESULT CALLBACK gui_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
     case WM_TIMER:
         if (state != nullptr && wParam == IDT_MONITOR_REFRESH) {
-            // Skip refresh if paused
-            if (state->paused.load(std::memory_order_relaxed)) {
-                return 0;
-            }
             if (is_live_monitor_enabled(state)) {
                 std::shared_ptr<ConsoleStatsMonitor> monitor;
                 {
