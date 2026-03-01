@@ -2,6 +2,8 @@
 
 An ultra-fast, highly optimized, multithreaded Sudoku puzzle generator written in modern **C++20**. Designed with High-Performance Computing (HPC) in mind, this engine can generate and validate massive amounts of Sudoku grids ranging from basic 4x4 up to complex 36x36 asymmetric geometries.
 
+Sudoku Level Generator Master Prompt Included in files as txt.
+
 ## ⚠️ Current Project Status
 
 *   **GUI Language:** Please note that the Graphical User Interface (built with native WinAPI) is currently available **only in Polish**. CLI commands and internal logs are mostly in English/mixed.
