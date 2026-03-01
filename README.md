@@ -5,7 +5,7 @@ An ultra-fast, highly optimized, multithreaded Sudoku puzzle generator written i
 ## ⚠️ Current Project Status
 
 *   **GUI Language:** Please note that the Graphical User Interface (built with native WinAPI) is currently available **only in Polish**. CLI commands and internal logs are mostly in English/mixed.
-*   **Strategy Implementation:** At this moment, **only Level 1 logical strategies** (e.g., *Naked Single*, *Hidden Single*) are fully implemented and active in the logic certifier. The codebase contains structural skeletons for advanced techniques (Levels 2-8, like *X-Wing*, *Swordfish*, *Exocet*, *MSLS*), but they are work-in-progress and not fully operational yet.
+*   **Strategy Implementation:** At this moment, **only Level 1 logical strategies** (e.g., *Naked Single*, *Hidden Single*) are fully implemented and active in the logic certifier. The codebase contains structural skeletons for advanced techniques (Levels 2-8, like *X-Wing*, *Swordfish*, *Exocet*, *MSLS*), but they are work-in-progress and not fully operational yet. In some strategies (chain to goal), with limited depth.
 
 ## ✨ Key Features
 
