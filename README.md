@@ -11,7 +11,7 @@ Sudoku Level Generator Master Prompt Included in files as txt.
 
 ## ✨ Key Features
 
-*   **Extreme Performance:** Utilizes hardware vectorization (`AVX2`, `AVX512`, `BMI2`) and bitwise operations.
+*   **Extreme Performance:** Utilizes hardware vectorization (`AVX2`, `AVX512`) and bitwise operations.
 *   **Advanced Threading:** Features an extreme low-latency, lock-free thread pool with MPSC (Multi-Producer Single-Consumer) rings and zero `shared_ptr` overhead.
 *   **Zero-Allocation Serialization:** Direct buffer writing using `std::to_chars` to completely avoid memory reallocation bottlenecks during grid output.
 *   **Uniqueness Validation:** Includes a highly optimized DLX (Dancing Links / Algorithm X) solver adapted for 64-bit masks.
