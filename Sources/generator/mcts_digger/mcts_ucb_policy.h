@@ -32,6 +32,7 @@ struct MctsAdvancedTuning {
     double p7_hit_weight = 1.5;
     double p8_hit_weight = 2.5;
     double required_hit_weight = 4.0;
+    double required_use_weight = 1.5;
     double p8_miss_penalty = 1.5;
     double min_reward = -8.0;
     bool require_p8_signal_for_stop = false;
@@ -124,6 +125,7 @@ inline MctsAdvancedTuning resolve_mcts_advanced_tuning(
         t.p7_hit_weight = 2.0;
         t.p8_hit_weight = 5.5;
         t.required_hit_weight = 9.0;
+        t.required_use_weight = 3.0;
         t.p8_miss_penalty = 3.5;
         t.min_reward = -14.0;
         t.require_p8_signal_for_stop = true;
@@ -136,6 +138,7 @@ inline MctsAdvancedTuning resolve_mcts_advanced_tuning(
     t.p7_hit_weight = 2.5;
     t.p8_hit_weight = 3.0;
     t.required_hit_weight = 6.0;
+    t.required_use_weight = 2.0;
     t.p8_miss_penalty = wants_p8 ? 1.0 : 0.0;
     t.min_reward = -10.0;
     t.require_p8_signal_for_stop = false;
@@ -150,14 +153,17 @@ inline int select_ucb_action(const MctsNodeScratch& sc, std::mt19937_64& rng, do
     
     // Faza 1: Losowy wybór nieodwiedzonego węzła (Rezerwuar Sampling dla optymalnej losowości)
     int unseen_pick = -1;
-    int unseen_seen = 0;
+    double unseen_weight_sum = 0.0;
     for (int i = 0; i < sc.active_count; ++i) {
         const int cell = sc.active_cells[static_cast<size_t>(i)];
         if (cell < 0) continue;
         
         if (sc.visits[static_cast<size_t>(cell)] == 0U) {
-            ++unseen_seen;
-            if ((rng() % static_cast<uint64_t>(unseen_seen)) == 0ULL) {
+            const double prior = std::max(0.0, sc.prior_bonus[static_cast<size_t>(cell)]);
+            const double weight = 1.0 + prior;
+            unseen_weight_sum += weight;
+            std::uniform_real_distribution<double> pick_dist(0.0, unseen_weight_sum);
+            if (pick_dist(rng) <= weight) {
                 unseen_pick = cell;
             }
         }
@@ -188,7 +194,7 @@ inline int select_ucb_action(const MctsNodeScratch& sc, std::mt19937_64& rng, do
         const double inv_v = 1.0 / static_cast<double>(v);
         const double exploit = sc.reward_sum[static_cast<size_t>(cell)] * inv_v;
         const double explore = c_param * std::sqrt(log_total * inv_v);
-        const double score = exploit + explore;
+        const double score = exploit + explore + sc.prior_bonus[static_cast<size_t>(cell)];
         
         if (score > best_score) {
             best_score = score;

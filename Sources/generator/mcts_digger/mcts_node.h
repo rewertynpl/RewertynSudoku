@@ -20,6 +20,7 @@ struct MctsNodeScratch {
     
     // Tablice równoległe (SoA) zastępujące alokowane węzły
     std::vector<double> reward_sum;
+    std::vector<double> prior_bonus;
     std::vector<uint32_t> visits;
     std::vector<int> active_cells;
     std::vector<int> active_pos; // Mapowanie: O(1) index w active_cells dla danej komórki
@@ -32,6 +33,7 @@ struct MctsNodeScratch {
             return;
         }
         reward_sum.assign(static_cast<size_t>(nn), 0.0);
+        prior_bonus.assign(static_cast<size_t>(nn), 0.0);
         visits.assign(static_cast<size_t>(nn), 0U);
         active_cells.assign(static_cast<size_t>(nn), -1);
         active_pos.assign(static_cast<size_t>(nn), -1);
@@ -43,6 +45,7 @@ struct MctsNodeScratch {
     void reset(int nn) {
         ensure(nn);
         std::fill(reward_sum.begin(), reward_sum.end(), 0.0);
+        std::fill(prior_bonus.begin(), prior_bonus.end(), 0.0);
         std::fill(visits.begin(), visits.end(), 0U);
         std::fill(active_pos.begin(), active_pos.end(), -1);
         active_count = 0;
@@ -96,6 +99,13 @@ struct MctsNodeScratch {
         reward_sum[static_cast<size_t>(cell)] += reward;
         visits[static_cast<size_t>(cell)] += 1U;
         ++total_visits;
+    }
+
+    void set_prior(int cell, double bonus) {
+        if (cell < 0 || cell >= prepared_nn) {
+            return;
+        }
+        prior_bonus[static_cast<size_t>(cell)] = bonus;
     }
 };
 

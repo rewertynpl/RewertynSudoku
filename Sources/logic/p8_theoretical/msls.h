@@ -14,6 +14,7 @@
 #include "../../config/bit_utils.h"
 #include "../logic_result.h"
 #include "../shared/exact_pattern_scratchpad.h"
+#include "../shared/state_probe.h"
 
 #include "../p7_nightmare/aic_grouped_aic.h"
 #include "../p7_nightmare/grouped_x_cycle.h"
@@ -23,21 +24,7 @@
 namespace sudoku_hpc::logic::p8_theoretical {
 
 inline bool msls_propagate_singles(CandidateState& st, int max_steps) {
-    const int nn = st.topo->nn;
-    for (int step = 0; step < max_steps; ++step) {
-        bool changed = false;
-        for (int idx = 0; idx < nn; ++idx) {
-            if (st.board->values[idx] != 0) continue;
-            const uint64_t m = st.cands[idx];
-            if (m == 0ULL) return false;
-            const int sd = config::single_digit_from_mask(m);
-            if (sd == 0) continue;
-            if (!st.place(idx, sd)) return false;
-            changed = true;
-        }
-        if (!changed) break;
-    }
-    return true;
+    return shared::propagate_singles(st, max_steps);
 }
 
 inline bool msls_probe_candidate_contradiction(
@@ -46,22 +33,7 @@ inline bool msls_probe_candidate_contradiction(
     int d,
     int max_steps,
     shared::ExactPatternScratchpad& sp) {
-    const int nn = st.topo->nn;
-    std::copy_n(st.cands, nn, sp.dyn_cands_backup);
-    std::copy_n(st.board->values.data(), nn, sp.dyn_values_backup);
-    sp.dyn_empty_backup = st.board->empty_cells;
-
-    bool contradiction = false;
-    if (!st.place(idx, d)) {
-        contradiction = true;
-    } else if (!msls_propagate_singles(st, max_steps)) {
-        contradiction = true;
-    }
-
-    std::copy_n(sp.dyn_cands_backup, nn, st.cands);
-    std::copy_n(sp.dyn_values_backup, nn, st.board->values.data());
-    st.board->empty_cells = sp.dyn_empty_backup;
-    return contradiction;
+    return shared::probe_candidate_contradiction(st, idx, d, max_steps, sp);
 }
 
 inline int msls_relation_mask(const CandidateState& st, int a, int b) {

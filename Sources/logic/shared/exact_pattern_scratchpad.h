@@ -80,6 +80,24 @@ struct alignas(64) ExactPatternScratchpad {
     int chain_count = 0;
 
     // ------------------------------------------------------------------------
+    // Bufory kandydatowo-krawędziowe dla 3D Medusa / coloring on bivalue graph
+    // ------------------------------------------------------------------------
+    static constexpr int MAX_MEDUSA_NODES = MAX_NN * 2;
+    static constexpr int MAX_MEDUSA_EDGES = MAX_NN * 6;
+    static constexpr int MAX_MEDUSA_ADJ = MAX_NN * 12;
+    int medusa_node_cell[MAX_MEDUSA_NODES]{};
+    uint64_t medusa_node_bit[MAX_MEDUSA_NODES]{};
+    int medusa_color[MAX_MEDUSA_NODES]{};
+    int medusa_degree[MAX_MEDUSA_NODES]{};
+    int medusa_offsets[MAX_MEDUSA_NODES + 1]{};
+    int medusa_cursor[MAX_MEDUSA_NODES]{};
+    int medusa_adj[MAX_MEDUSA_ADJ]{};
+    int medusa_edge_u[MAX_MEDUSA_EDGES]{};
+    int medusa_edge_v[MAX_MEDUSA_EDGES]{};
+    int medusa_node_count = 0;
+    int medusa_edge_count = 0;
+
+    // ------------------------------------------------------------------------
     // Bufor dla technik podstawowych P4-P5 (Ryby i Skrzydła)
     // ------------------------------------------------------------------------
     uint64_t fish_row_masks[MAX_N]{};
@@ -140,6 +158,9 @@ struct alignas(64) ExactPatternScratchpad {
     // dla Forcing Chains. Gwarantuje stan czystości do 2-8 poziomów zagnieżdżenia.
     uint64_t dyn_cands_backup[MAX_NN]{};
     uint16_t dyn_values_backup[MAX_NN]{};
+    uint64_t dyn_row_used_backup[MAX_N]{};
+    uint64_t dyn_col_used_backup[MAX_N]{};
+    uint64_t dyn_box_used_backup[MAX_N]{};
     int dyn_empty_backup = 0;
 
     // Struktura zrzutu dla Pattern Overlay Method (DFS fallback P8)

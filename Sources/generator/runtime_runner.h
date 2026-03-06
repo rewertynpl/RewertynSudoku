@@ -72,6 +72,42 @@ inline GenerateRunResult run_generic_sudoku(
     run_cfg.min_clues = std::clamp(run_cfg.min_clues, 0, nn);
     run_cfg.max_clues = std::clamp(run_cfg.max_clues, run_cfg.min_clues, nn);
 
+    const bool wants_p7_plus = run_cfg.difficulty_level_required >= 7;
+    const bool wants_p8 = run_cfg.difficulty_level_required >= 8;
+
+    if (!run_cfg.fast_test_mode) {
+        if (run_cfg.max_attempts == 0) {
+            const uint64_t scale = wants_p8 ? 8192ULL : (wants_p7_plus ? 4096ULL : 1024ULL);
+            run_cfg.max_attempts = std::max<uint64_t>(128ULL, run_cfg.target_puzzles * scale);
+        }
+        if (run_cfg.max_total_time_s == 0) {
+            run_cfg.max_total_time_s = wants_p8 ? 180ULL : (wants_p7_plus ? 120ULL : 60ULL);
+        }
+        if (run_cfg.attempt_time_budget_s <= 0.0) {
+            run_cfg.attempt_time_budget_s = wants_p8 ? 2.0 : (wants_p7_plus ? 1.5 : 1.0);
+        }
+        if (run_cfg.attempt_node_budget == 0) {
+            const uint64_t suggested = suggest_attempt_node_budget(
+                run_cfg.box_rows,
+                run_cfg.box_cols,
+                std::max(1, run_cfg.difficulty_level_required));
+            run_cfg.attempt_node_budget = std::max<uint64_t>(30'000ULL, suggested / (wants_p7_plus ? 6ULL : 4ULL));
+        }
+
+        if (run_cfg.difficulty_level_required >= 6 && !run_cfg.pattern_forcing_enabled) {
+            run_cfg.pattern_forcing_enabled = true;
+        }
+        if (run_cfg.pattern_forcing_enabled) {
+            run_cfg.pattern_forcing_tries = std::max(run_cfg.pattern_forcing_tries, wants_p8 ? 12 : (wants_p7_plus ? 8 : 6));
+            if (run_cfg.pattern_forcing_anchor_count <= 0) {
+                run_cfg.pattern_forcing_anchor_count = wants_p8 ? 8 : (wants_p7_plus ? 6 : 4);
+            }
+        }
+        if (run_cfg.mcts_tuning_profile == "auto") {
+            run_cfg.mcts_tuning_profile = wants_p8 ? "p8" : (wants_p7_plus ? "p7" : "auto");
+        }
+    }
+
     if (run_cfg.fast_test_mode) {
         // Fast smoke profile: bounded runtime and relaxed heavy verification stages.
         run_cfg.enable_quality_contract = false;
@@ -140,6 +176,12 @@ inline GenerateRunResult run_generic_sudoku(
     std::atomic<uint64_t> strategy_naked_hit{0};
     std::atomic<uint64_t> strategy_hidden_use{0};
     std::atomic<uint64_t> strategy_hidden_hit{0};
+    std::atomic<uint64_t> mcts_advanced_evals{0};
+    std::atomic<uint64_t> mcts_required_strategy_analyzed{0};
+    std::atomic<uint64_t> mcts_required_strategy_use{0};
+    std::atomic<uint64_t> mcts_required_strategy_hit{0};
+    std::atomic<uint64_t> required_zero_use_streak_max{0};
+    std::atomic<int> best_template_score{0};
     std::atomic<uint64_t> kernel_elapsed_ns{0};
     std::atomic<uint64_t> kernel_calls{0};
 
@@ -171,6 +213,12 @@ inline GenerateRunResult run_generic_sudoku(
 
             uint64_t local_attempts = 0;
             uint64_t local_written = 0;
+            uint64_t local_required_analyzed = 0;
+            uint64_t local_required_use = 0;
+            uint64_t local_required_hit = 0;
+            uint64_t local_required_zero_use_streak = 0;
+            uint64_t local_required_zero_use_streak_max = 0;
+            int local_best_template_score = 0;
 
             while (true) {
                 if (is_cancelled()) {
@@ -240,6 +288,34 @@ inline GenerateRunResult run_generic_sudoku(
                 strategy_naked_hit.fetch_add(perf.strategy_naked_hit, std::memory_order_relaxed);
                 strategy_hidden_use.fetch_add(perf.strategy_hidden_use, std::memory_order_relaxed);
                 strategy_hidden_hit.fetch_add(perf.strategy_hidden_hit, std::memory_order_relaxed);
+                mcts_advanced_evals.fetch_add(perf.mcts_advanced_evals, std::memory_order_relaxed);
+                mcts_required_strategy_analyzed.fetch_add(perf.mcts_required_strategy_analyzed, std::memory_order_relaxed);
+                mcts_required_strategy_use.fetch_add(perf.mcts_required_strategy_use, std::memory_order_relaxed);
+                mcts_required_strategy_hit.fetch_add(perf.mcts_required_strategy_hit, std::memory_order_relaxed);
+                local_required_analyzed += perf.mcts_required_strategy_analyzed;
+                local_required_use += perf.mcts_required_strategy_use;
+                local_required_hit += perf.mcts_required_strategy_hit;
+                local_best_template_score = std::max(local_best_template_score, perf.pattern_best_template_score);
+                if (perf.mcts_required_strategy_analyzed > 0 && perf.mcts_required_strategy_use == 0) {
+                    ++local_required_zero_use_streak;
+                    local_required_zero_use_streak_max = std::max(local_required_zero_use_streak_max, local_required_zero_use_streak);
+                } else if (perf.mcts_required_strategy_use > 0) {
+                    local_required_zero_use_streak = 0;
+                }
+                {
+                    uint64_t prev = required_zero_use_streak_max.load(std::memory_order_relaxed);
+                    while (prev < local_required_zero_use_streak_max &&
+                           !required_zero_use_streak_max.compare_exchange_weak(
+                               prev, local_required_zero_use_streak_max,
+                               std::memory_order_relaxed, std::memory_order_relaxed)) {}
+                }
+                {
+                    int prev = best_template_score.load(std::memory_order_relaxed);
+                    while (prev < local_best_template_score &&
+                           !best_template_score.compare_exchange_weak(
+                               prev, local_best_template_score,
+                               std::memory_order_relaxed, std::memory_order_relaxed)) {}
+                }
 
                 if (ok) {
                     uint64_t accepted_idx = 0;
@@ -301,6 +377,8 @@ inline GenerateRunResult run_generic_sudoku(
                     monitor->set_accepted(accepted.load(std::memory_order_relaxed));
                     monitor->set_written(written.load(std::memory_order_relaxed));
                     monitor->set_rejected(result.rejected);
+                    monitor->set_analyzed_required_strategy(mcts_required_strategy_analyzed.load(std::memory_order_relaxed));
+                    monitor->set_required_strategy_hits(mcts_required_strategy_hit.load(std::memory_order_relaxed));
 
                     WorkerRow row{};
                     row.worker = "worker_" + std::to_string(worker_idx);
@@ -316,6 +394,9 @@ inline GenerateRunResult run_generic_sudoku(
                     row.stage_prefilter_ms = static_cast<double>(perf.prefilter_elapsed_ns) / 1e6;
                     row.stage_logic_ms = static_cast<double>(perf.logic_elapsed_ns) / 1e6;
                     row.stage_uniqueness_ms = static_cast<double>(perf.uniqueness_elapsed_ns) / 1e6;
+                    row.required_strategy_analyzed = local_required_analyzed;
+                    row.required_strategy_use = local_required_use;
+                    row.required_strategy_hit = local_required_hit;
                     monitor->set_worker_row(static_cast<size_t>(worker_idx), row);
                 }
             }
@@ -325,8 +406,23 @@ inline GenerateRunResult run_generic_sudoku(
                 row.worker = "worker_" + std::to_string(worker_idx);
                 row.applied = local_attempts;
                 row.status = "done";
+                row.required_strategy_analyzed = local_required_analyzed;
+                row.required_strategy_use = local_required_use;
+                row.required_strategy_hit = local_required_hit;
                 monitor->set_worker_row(static_cast<size_t>(worker_idx), row);
             }
+
+            log_info(
+                "runner.worker",
+                "worker=" + std::to_string(worker_idx) +
+                " attempts=" + std::to_string(local_attempts) +
+                " written=" + std::to_string(local_written) +
+                " required_analyzed=" + std::to_string(local_required_analyzed) +
+                " required_use=" + std::to_string(local_required_use) +
+                " required_hit=" + std::to_string(local_required_hit) +
+                " required_zero_use_streak=" + std::to_string(local_required_zero_use_streak) +
+                " required_zero_use_streak_max=" + std::to_string(local_required_zero_use_streak_max) +
+                " best_template_score=" + std::to_string(local_best_template_score));
         });
     }
 
@@ -354,6 +450,10 @@ inline GenerateRunResult run_generic_sudoku(
     result.strategy_naked_hit = strategy_naked_hit.load(std::memory_order_relaxed);
     result.strategy_hidden_use = strategy_hidden_use.load(std::memory_order_relaxed);
     result.strategy_hidden_hit = strategy_hidden_hit.load(std::memory_order_relaxed);
+    result.mcts_advanced_evals = mcts_advanced_evals.load(std::memory_order_relaxed);
+    result.mcts_required_strategy_analyzed = mcts_required_strategy_analyzed.load(std::memory_order_relaxed);
+    result.mcts_required_strategy_use = mcts_required_strategy_use.load(std::memory_order_relaxed);
+    result.mcts_required_strategy_hit = mcts_required_strategy_hit.load(std::memory_order_relaxed);
 
     const double asymmetry_ratio = static_cast<double>(std::max(run_cfg.box_rows, run_cfg.box_cols)) /
                                    static_cast<double>(std::max(1, std::min(run_cfg.box_rows, run_cfg.box_cols)));
@@ -388,6 +488,8 @@ inline GenerateRunResult run_generic_sudoku(
         monitor->set_accepted(result.accepted);
         monitor->set_written(result.written);
         monitor->set_rejected(result.rejected);
+        monitor->set_analyzed_required_strategy(result.mcts_required_strategy_analyzed);
+        monitor->set_required_strategy_hits(result.mcts_required_strategy_hit);
         monitor->set_background_status("done accepted=" + std::to_string(result.accepted) + " written=" + std::to_string(result.written));
     }
 
@@ -395,7 +497,12 @@ inline GenerateRunResult run_generic_sudoku(
         "runner",
         "done accepted=" + std::to_string(result.accepted) +
         " written=" + std::to_string(result.written) +
-        " attempts=" + std::to_string(result.attempts));
+        " attempts=" + std::to_string(result.attempts) +
+        " mcts_required_analyzed=" + std::to_string(result.mcts_required_strategy_analyzed) +
+        " mcts_required_use=" + std::to_string(result.mcts_required_strategy_use) +
+        " mcts_required_hit=" + std::to_string(result.mcts_required_strategy_hit) +
+        " required_zero_use_streak_max=" + std::to_string(required_zero_use_streak_max.load(std::memory_order_relaxed)) +
+        " best_template_score=" + std::to_string(best_template_score.load(std::memory_order_relaxed)));
 
     return result;
 }

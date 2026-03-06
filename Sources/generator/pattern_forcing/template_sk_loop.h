@@ -21,7 +21,7 @@ class TemplateSKLoop {
 public:
     // Wstrzykuje układ wierzchołków dla SK-Loop (cykliczny prostokąt).
     // Dwie komórki stają się twardymi bivalue, a dwie dostają cyfry "wyjściowe" (exit digits).
-    static bool build(const GenericTopology& topo, std::mt19937_64& rng, ExactPatternTemplatePlan& plan) {
+    static bool build(const GenericTopology& topo, std::mt19937_64& rng, ExactPatternTemplatePlan& plan, bool dense_mode = false) {
         plan = {}; // Reset struktury
 
         const int n = topo.n;
@@ -58,6 +58,10 @@ public:
         for (int g = 0; g < 64 && d2 == d1; ++g) {
             d2 = static_cast<int>(rng() % static_cast<uint64_t>(n));
         }
+        int d3 = d2;
+        for (int g = 0; g < 64 && (d3 == d1 || d3 == d2); ++g) {
+            d3 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+        }
 
         const uint64_t core = (1ULL << d1) | (1ULL << d2);
 
@@ -73,7 +77,24 @@ public:
         plan.add_anchor(c, core);
         plan.add_anchor(d, ex2 & full);
 
+        if (dense_mode) {
+            const uint64_t wing = core | (1ULL << d3);
+            int added = 0;
+            for (int cc = 0; cc < n && added < 2; ++cc) {
+                if (cc == c1 || cc == c2) continue;
+                if (plan.add_anchor(r1 * n + cc, wing & full)) ++added;
+            }
+            added = 0;
+            for (int rr = 0; rr < n && added < 2; ++rr) {
+                if (rr == r1 || rr == r2) continue;
+                if (plan.add_anchor(rr * n + c2, wing & full)) ++added;
+            }
+        }
+
         plan.valid = (plan.anchor_count == 4);
+        if (dense_mode) {
+            plan.valid = (plan.anchor_count >= 6);
+        }
         return plan.valid;
     }
 };

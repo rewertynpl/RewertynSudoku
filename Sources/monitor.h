@@ -59,6 +59,9 @@ struct WorkerRow {
     double avg_attempt_ms = 0.0;
     double success_rate_pct = 0.0;
     uint64_t backtrack_count = 0;
+    uint64_t required_strategy_analyzed = 0;
+    uint64_t required_strategy_use = 0;
+    uint64_t required_strategy_hit = 0;
 };
 
 struct StrategyRow {
@@ -188,6 +191,8 @@ public:
             << " written=" << t.written
             << " attempts=" << t.attempts
             << " rejected=" << t.rejected
+            << " required_use=" << t.analyzed_required_strategy
+            << " required_hit=" << t.required_strategy_hits
             << " workers=" << t.active_workers
             << " elapsed_s=" << elapsed_s
             << "\n";
@@ -199,6 +204,9 @@ public:
                 out << "[" << w.worker << "] status=" << w.status
                     << " clues=" << w.clues
                     << " applied=" << w.applied
+                    << " reqA/U/H=" << w.required_strategy_analyzed
+                    << "/" << w.required_strategy_use
+                    << "/" << w.required_strategy_hit
                     << " solved_ms=" << std::fixed << std::setprecision(3) << w.stage_solved_ms
                     << " dig_ms=" << std::fixed << std::setprecision(3) << w.stage_dig_ms
                     << " logic_ms=" << std::fixed << std::setprecision(3) << w.stage_logic_ms

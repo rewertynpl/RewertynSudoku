@@ -24,13 +24,28 @@
 namespace sudoku_hpc::logic::p7_nightmare {
 
 inline bool als_deep_pass_allowed(const CandidateState& st) {
-    if (st.topo->n > 32) return false;
-    return st.board->empty_cells <= (st.topo->nn - st.topo->n);
+    if (st.topo->n > 25) return false;
+    return st.board->empty_cells <= (st.topo->nn - 2 * st.topo->n);
 }
 
 inline bool als_overlap(const shared::ALS& a, const shared::ALS& b, int words) {
     for (int w = 0; w < words; ++w) {
         if ((a.cell_mask[w] & b.cell_mask[w]) != 0ULL) return true;
+    }
+    return false;
+}
+
+inline bool als_path_has_overlap(
+    const shared::ALS& cand,
+    const shared::ALS* als_list,
+    const int* state_als,
+    const int* state_parent,
+    int state_idx,
+    int words) {
+    int cur = state_idx;
+    while (cur >= 0) {
+        if (als_overlap(cand, als_list[state_als[cur]], words)) return true;
+        cur = state_parent[cur];
     }
     return false;
 }
@@ -128,6 +143,141 @@ inline ApplyResult eliminate_from_seen_intersection(
         const ApplyResult er = st.eliminate(t, bit);
         if (er != ApplyResult::NoProgress) return er;
     }
+    return ApplyResult::NoProgress;
+}
+
+inline int als_collect_rcc_edges(
+    CandidateState& st,
+    const shared::ALS* als_list,
+    int limit,
+    int* edge_u,
+    int* edge_v,
+    uint64_t* edge_digit) {
+    const int nn = st.topo->nn;
+    const int words = (nn + 63) >> 6;
+    int ah[8]{}, bh[8]{};
+    int ac = 0, bc = 0;
+    int edge_count = 0;
+    constexpr int EDGE_CAP = 1024;
+
+    for (int i = 0; i < limit; ++i) {
+        for (int j = i + 1; j < limit; ++j) {
+            if (als_overlap(als_list[i], als_list[j], words)) continue;
+            uint64_t common = als_list[i].digit_mask & als_list[j].digit_mask;
+            while (common != 0ULL) {
+                const uint64_t bit = config::bit_lsb(common);
+                common = config::bit_clear_lsb_u64(common);
+                if (!als_restricted_common(st, als_list[i], als_list[j], bit, ah, ac, bh, bc)) continue;
+                if (edge_count + 1 >= EDGE_CAP) return edge_count;
+                edge_u[edge_count] = i;
+                edge_v[edge_count] = j;
+                edge_digit[edge_count] = bit;
+                ++edge_count;
+                edge_u[edge_count] = j;
+                edge_v[edge_count] = i;
+                edge_digit[edge_count] = bit;
+                ++edge_count;
+            }
+        }
+    }
+    return edge_count;
+}
+
+inline ApplyResult direct_als_graph_chain_pass(
+    CandidateState& st,
+    int min_depth,
+    int max_depth,
+    int als_limit) {
+    auto& sp = shared::exact_pattern_scratchpad();
+    const int als_cnt = shared::build_als_list(st, 2, 4);
+    if (als_cnt < 3) return ApplyResult::NoProgress;
+
+    const int limit = std::min(als_cnt, als_limit);
+    int edge_u[1024]{}, edge_v[1024]{};
+    uint64_t edge_digit[1024]{};
+    const int edge_count = als_collect_rcc_edges(st, sp.als_list, limit, edge_u, edge_v, edge_digit);
+    if (edge_count == 0) return ApplyResult::NoProgress;
+
+    const int nn = st.topo->nn;
+    const int words = (nn + 63) >> 6;
+    int start_z[8]{}, end_z[8]{};
+
+    int state_als[1024]{};
+    int state_parent[1024]{};
+    int state_in_digit[1024]{};
+    int state_first_digit[1024]{};
+    int state_depth[1024]{};
+
+    const int visited_cap = std::min(limit * 64, shared::ExactPatternScratchpad::MAX_NN);
+    for (int start = 0; start < limit; ++start) {
+        std::fill_n(sp.visited, visited_cap, 0);
+        int qh = 0;
+        int qt = 0;
+
+        for (int e = 0; e < edge_count; ++e) {
+            if (edge_u[e] != start) continue;
+            const int nxt = edge_v[e];
+            const int in_digit = config::bit_ctz_u64(edge_digit[e]) + 1;
+            const int visit_idx = nxt * 64 + (in_digit - 1);
+            if (visit_idx < visited_cap && sp.visited[visit_idx] != 0) continue;
+            if (visit_idx < visited_cap) sp.visited[visit_idx] = 1;
+
+            state_als[qt] = nxt;
+            state_parent[qt] = -1;
+            state_in_digit[qt] = in_digit;
+            state_first_digit[qt] = in_digit;
+            state_depth[qt] = 1;
+            ++qt;
+            if (qt >= 1024) break;
+        }
+
+        while (qh < qt) {
+            const int sid = qh++;
+            const int cur_als = state_als[sid];
+            const int in_digit = state_in_digit[sid];
+            const int first_digit = state_first_digit[sid];
+            const int depth = state_depth[sid];
+
+            const uint64_t forbid =
+                (1ULL << (first_digit - 1)) | (1ULL << (in_digit - 1));
+            uint64_t zmask = sp.als_list[start].digit_mask & sp.als_list[cur_als].digit_mask & ~forbid;
+            if (depth >= min_depth) {
+                while (zmask != 0ULL) {
+                    const uint64_t z = config::bit_lsb(zmask);
+                    zmask = config::bit_clear_lsb_u64(zmask);
+                    const int start_cnt = als_collect_holders_for_digit(st, sp.als_list[start], z, start_z);
+                    const int end_cnt = als_collect_holders_for_digit(st, sp.als_list[cur_als], z, end_z);
+                    if (start_cnt <= 0 || end_cnt <= 0) continue;
+                    const ApplyResult er = eliminate_from_seen_intersection(
+                        st, z, start_z, start_cnt, end_z, end_cnt, &sp.als_list[start], &sp.als_list[cur_als]);
+                    if (er != ApplyResult::NoProgress) return er;
+                }
+            }
+
+            if (depth >= max_depth) continue;
+
+            for (int e = 0; e < edge_count; ++e) {
+                if (edge_u[e] != cur_als) continue;
+                const int nxt = edge_v[e];
+                const int out_digit = config::bit_ctz_u64(edge_digit[e]) + 1;
+                if (out_digit == in_digit || nxt == start) continue;
+                if (als_path_has_overlap(sp.als_list[nxt], sp.als_list, state_als, state_parent, sid, words)) continue;
+
+                const int visit_idx = nxt * 64 + (out_digit - 1);
+                if (visit_idx < visited_cap && sp.visited[visit_idx] != 0) continue;
+                if (visit_idx < visited_cap) sp.visited[visit_idx] = 1;
+
+                if (qt >= 1024) break;
+                state_als[qt] = nxt;
+                state_parent[qt] = sid;
+                state_in_digit[qt] = out_digit;
+                state_first_digit[qt] = first_digit;
+                state_depth[qt] = depth + 1;
+                ++qt;
+            }
+        }
+    }
+
     return ApplyResult::NoProgress;
 }
 
@@ -325,6 +475,32 @@ inline ApplyResult apply_als_xy_wing(CandidateState& st, StrategyStats& s, Gener
     ApplyResult ar;
 
     StrategyStats tmp{};
+    if (als_deep_pass_allowed(st)) {
+        ar = direct_als_graph_chain_pass(st, 2, 4, 56);
+        if (ar == ApplyResult::Contradiction) {
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+        if (ar == ApplyResult::Progress) {
+            ++s.hit_count;
+            r.used_als_xy_wing = true;
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+
+        ar = direct_als_xy_wing_pass(st);
+        if (ar == ApplyResult::Contradiction) {
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+        if (ar == ApplyResult::Progress) {
+            ++s.hit_count;
+            r.used_als_xy_wing = true;
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+    }
+
     ar = p6_diabolical::apply_als_xz(st, tmp, r);
     if (ar == ApplyResult::Contradiction) {
         s.elapsed_ns += st.now_ns() - t0;
@@ -349,23 +525,6 @@ inline ApplyResult apply_als_xy_wing(CandidateState& st, StrategyStats& s, Gener
         return ar;
     }
 
-    if (!als_deep_pass_allowed(st)) {
-        s.elapsed_ns += st.now_ns() - t0;
-        return ApplyResult::NoProgress;
-    }
-
-    ar = direct_als_xy_wing_pass(st);
-    if (ar == ApplyResult::Contradiction) {
-        s.elapsed_ns += st.now_ns() - t0;
-        return ar;
-    }
-    if (ar == ApplyResult::Progress) {
-        ++s.hit_count;
-        r.used_als_xy_wing = true;
-        s.elapsed_ns += st.now_ns() - t0;
-        return ar;
-    }
-
     s.elapsed_ns += st.now_ns() - t0;
     return ApplyResult::NoProgress;
 }
@@ -377,6 +536,32 @@ inline ApplyResult apply_als_chain(CandidateState& st, StrategyStats& s, Generic
     ApplyResult ar;
 
     StrategyStats tmp{};
+    if (als_deep_pass_allowed(st)) {
+        ar = direct_als_graph_chain_pass(st, 2, 5, 64);
+        if (ar == ApplyResult::Contradiction) {
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+        if (ar == ApplyResult::Progress) {
+            ++s.hit_count;
+            r.used_als_chain = true;
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+
+        ar = direct_als_chain_pass(st);
+        if (ar == ApplyResult::Contradiction) {
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+        if (ar == ApplyResult::Progress) {
+            ++s.hit_count;
+            r.used_als_chain = true;
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+    }
+
     ar = p6_diabolical::apply_als_xz(st, tmp, r);
     if (ar == ApplyResult::Contradiction) {
         s.elapsed_ns += st.now_ns() - t0;
@@ -401,23 +586,6 @@ inline ApplyResult apply_als_chain(CandidateState& st, StrategyStats& s, Generic
         return ar;
     }
 
-    if (!als_deep_pass_allowed(st)) {
-        s.elapsed_ns += st.now_ns() - t0;
-        return ApplyResult::NoProgress;
-    }
-
-    ar = direct_als_chain_pass(st);
-    if (ar == ApplyResult::Contradiction) {
-        s.elapsed_ns += st.now_ns() - t0;
-        return ar;
-    }
-    if (ar == ApplyResult::Progress) {
-        ++s.hit_count;
-        r.used_als_chain = true;
-        s.elapsed_ns += st.now_ns() - t0;
-        return ar;
-    }
-
     s.elapsed_ns += st.now_ns() - t0;
     return ApplyResult::NoProgress;
 }
@@ -429,16 +597,30 @@ inline ApplyResult apply_als_aic(CandidateState& st, StrategyStats& s, GenericLo
     ApplyResult ar;
 
     StrategyStats tmp{};
-    ar = p6_diabolical::apply_x_chain(st, tmp, r);
-    if (ar == ApplyResult::Contradiction) {
-        s.elapsed_ns += st.now_ns() - t0;
-        return ar;
-    }
-    if (ar == ApplyResult::Progress) {
-        ++s.hit_count;
-        r.used_als_aic = true;
-        s.elapsed_ns += st.now_ns() - t0;
-        return ar;
+    if (als_deep_pass_allowed(st)) {
+        ar = direct_als_graph_chain_pass(st, 3, 6, 64);
+        if (ar == ApplyResult::Contradiction) {
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+        if (ar == ApplyResult::Progress) {
+            ++s.hit_count;
+            r.used_als_aic = true;
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+
+        ar = direct_als_aic_pass(st);
+        if (ar == ApplyResult::Contradiction) {
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
+        if (ar == ApplyResult::Progress) {
+            ++s.hit_count;
+            r.used_als_aic = true;
+            s.elapsed_ns += st.now_ns() - t0;
+            return ar;
+        }
     }
 
     ar = direct_als_chain_pass(st);
@@ -453,12 +635,7 @@ inline ApplyResult apply_als_aic(CandidateState& st, StrategyStats& s, GenericLo
         return ar;
     }
 
-    if (!als_deep_pass_allowed(st)) {
-        s.elapsed_ns += st.now_ns() - t0;
-        return ApplyResult::NoProgress;
-    }
-
-    ar = direct_als_aic_pass(st);
+    ar = p6_diabolical::apply_x_chain(st, tmp, r);
     if (ar == ApplyResult::Contradiction) {
         s.elapsed_ns += st.now_ns() - t0;
         return ar;

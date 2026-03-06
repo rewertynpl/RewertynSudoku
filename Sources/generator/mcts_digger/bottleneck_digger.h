@@ -9,6 +9,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -34,6 +35,27 @@ inline bool mcts_required_strategy_slot(RequiredStrategy rs, size_t& out_slot) {
     return GenericLogicCertify::slot_from_required_strategy(rs, out_slot);
 }
 
+inline double mcts_required_anchor_bonus(
+    const GenericTopology& topo,
+    int idx,
+    const uint8_t* protected_cells) {
+    if (protected_cells == nullptr) return 0.0;
+    const int n = topo.n;
+    const int row = topo.cell_row[static_cast<size_t>(idx)];
+    const int col = topo.cell_col[static_cast<size_t>(idx)];
+    const int box = topo.cell_box[static_cast<size_t>(idx)];
+
+    int affinity = 0;
+    for (int j = 0; j < topo.nn; ++j) {
+        if (protected_cells[static_cast<size_t>(j)] == 0) continue;
+        if (topo.cell_row[static_cast<size_t>(j)] == row) ++affinity;
+        if (topo.cell_col[static_cast<size_t>(j)] == col) ++affinity;
+        if (topo.cell_box[static_cast<size_t>(j)] == box) ++affinity;
+    }
+    affinity = std::min(affinity, std::max(2, n / 2));
+    return 0.12 * static_cast<double>(affinity);
+}
+
 class GenericMctsBottleneckDigger {
 public:
     struct RunStats {
@@ -46,6 +68,8 @@ public:
         int advanced_evals = 0;
         int advanced_p7_hits = 0;
         int advanced_p8_hits = 0;
+        int required_strategy_analyzed = 0;
+        int required_strategy_uses = 0;
         int required_strategy_hits = 0;
     };
 
@@ -60,6 +84,11 @@ public:
         std::vector<uint16_t>& out_puzzle,
         int& out_clues,
         const uint8_t* protected_cells = nullptr,
+        const uint64_t* pattern_allowed_masks = nullptr,
+        const int* pattern_anchor_idx = nullptr,
+        const uint64_t* pattern_anchor_masks = nullptr,
+        int pattern_anchor_count = 0,
+        bool exact_pattern = false,
         SearchAbortControl* budget = nullptr,
         RunStats* stats = nullptr) const {
 
@@ -87,6 +116,60 @@ public:
                 continue;
             }
             sc.activate(idx);
+            if (cfg.required_strategy != RequiredStrategy::None) {
+                double prior = mcts_required_anchor_bonus(topo, idx, protected_cells);
+                if (pattern_anchor_idx != nullptr && pattern_anchor_masks != nullptr && pattern_anchor_count > 0) {
+                    int visible_anchors = 0;
+                    double structural_bonus = 0.0;
+                    for (int ai = 0; ai < pattern_anchor_count; ++ai) {
+                        const int anchor = pattern_anchor_idx[static_cast<size_t>(ai)];
+                        if (anchor < 0 || anchor >= topo.nn) continue;
+                        const bool sees =
+                            topo.cell_row[static_cast<size_t>(anchor)] == topo.cell_row[static_cast<size_t>(idx)] ||
+                            topo.cell_col[static_cast<size_t>(anchor)] == topo.cell_col[static_cast<size_t>(idx)] ||
+                            topo.cell_box[static_cast<size_t>(anchor)] == topo.cell_box[static_cast<size_t>(idx)];
+                        if (!sees) continue;
+                        ++visible_anchors;
+                        const int bits = std::popcount(pattern_anchor_masks[static_cast<size_t>(ai)]);
+                        structural_bonus += (bits <= 2) ? 0.35 : ((bits == 3) ? 0.22 : 0.10);
+                    }
+
+                    if (visible_anchors >= 2) {
+                        structural_bonus += exact_pattern ? 0.45 : 0.20;
+                    }
+
+                    if (pattern_allowed_masks != nullptr) {
+                        const uint64_t local_mask = pattern_allowed_masks[static_cast<size_t>(idx)];
+                        const int local_bits = std::popcount(local_mask);
+                        if (local_bits > 0 && local_bits < topo.n) {
+                            structural_bonus += (local_bits <= 2) ? 0.35 : ((local_bits == 3) ? 0.20 : 0.08);
+                        }
+                    }
+
+                    if (exact_pattern && pattern_anchor_count >= 2) {
+                        for (int a = 0; a < pattern_anchor_count; ++a) {
+                            const int anchor_a = pattern_anchor_idx[static_cast<size_t>(a)];
+                            if (anchor_a < 0 || anchor_a >= topo.nn) continue;
+                            const int row_a = topo.cell_row[static_cast<size_t>(anchor_a)];
+                            const int col_a = topo.cell_col[static_cast<size_t>(anchor_a)];
+                            for (int b = a + 1; b < pattern_anchor_count; ++b) {
+                                const int anchor_b = pattern_anchor_idx[static_cast<size_t>(b)];
+                                if (anchor_b < 0 || anchor_b >= topo.nn) continue;
+                                const int row_b = topo.cell_row[static_cast<size_t>(anchor_b)];
+                                const int col_b = topo.cell_col[static_cast<size_t>(anchor_b)];
+                                if ((topo.cell_row[static_cast<size_t>(idx)] == row_a &&
+                                     topo.cell_col[static_cast<size_t>(idx)] == col_b) ||
+                                    (topo.cell_row[static_cast<size_t>(idx)] == row_b &&
+                                     topo.cell_col[static_cast<size_t>(idx)] == col_a)) {
+                                    structural_bonus += 0.10;
+                                }
+                            }
+                        }
+                    }
+                    prior += structural_bonus;
+                }
+                sc.set_prior(idx, prior);
+            }
         }
 
         int clues = topo.nn;
@@ -98,15 +181,17 @@ public:
         const double ucb_c = std::clamp(cfg.mcts_ucb_c, 0.1, 4.0);
         
         const MctsAdvancedTuning tuning = resolve_mcts_advanced_tuning(cfg, topo);
-        int advanced_level = std::clamp(std::max(6, cfg.difficulty_level_required), 6, 8);
+        size_t required_slot = 0;
+        const bool has_required_slot = mcts_required_strategy_slot(cfg.required_strategy, required_slot);
+        const int required_level = has_required_slot
+            ? static_cast<int>(GenericLogicCertify::strategy_meta_for_slot(required_slot).level)
+            : 0;
+        int advanced_level = std::clamp(std::max(6, std::max(cfg.difficulty_level_required, required_level)), 6, 8);
         if (cfg.max_pattern_depth > 0) {
             advanced_level = std::min(advanced_level, cfg.max_pattern_depth);
             advanced_level = std::clamp(advanced_level, 6, 8);
         }
         const bool wants_p8 = (cfg.difficulty_level_required >= 8) || mcts_is_level8_strategy(cfg.required_strategy);
-        
-        size_t required_slot = 0;
-        const bool has_required_slot = mcts_required_strategy_slot(cfg.required_strategy, required_slot);
 
         // Główna pętla MCTS
         for (int iter = 0; iter < iter_cap; ++iter) {
@@ -195,7 +280,9 @@ public:
 
             int p7_hits = 0;
             int p8_hits = 0;
+            int required_analyzed = 0;
             int required_hits = 0;
+            int required_uses = 0;
             bool advanced_signal = false;
             bool stopping_signal = !basic_solved;
 
@@ -226,13 +313,43 @@ public:
                 }
 
                 if (has_required_slot) {
+                    ++required_analyzed;
                     required_hits = static_cast<int>(adv.strategy_stats[required_slot].hit_count);
+                    required_uses = static_cast<int>(adv.strategy_stats[required_slot].use_count);
+                }
+
+                const bool do_required_eval =
+                    has_required_slot &&
+                    required_level > 0 &&
+                    required_hits == 0 &&
+                    required_uses == 0 &&
+                    (((iter % std::max(1, tuning.eval_stride / 2)) == 0) ||
+                     ((clues - removal) <= (target_clues + tuning.near_window)));
+
+                if (do_required_eval) {
+                    ++required_analyzed;
+                    const GenericLogicCertifyResult req = logic.certify_up_to_level(
+                        out_puzzle, topo, required_level, budget, false);
+                    if (req.timed_out) {
+                        out_puzzle[static_cast<size_t>(idx)] = old_a;
+                        if (remove_pair) out_puzzle[static_cast<size_t>(sym_idx)] = old_b;
+                        if (stats != nullptr) ++stats->rejected_logic_timeout;
+                        return false;
+                    }
+                    required_hits = std::max(required_hits, static_cast<int>(req.strategy_stats[required_slot].hit_count));
+                    required_uses = std::max(required_uses, static_cast<int>(req.strategy_stats[required_slot].use_count));
                 }
 
                 // Kalkulacja zysku (Backpropagation value)
                 reward += tuning.p7_hit_weight * static_cast<double>(p7_hits);
                 reward += tuning.p8_hit_weight * static_cast<double>(p8_hits);
                 reward += tuning.required_hit_weight * static_cast<double>(required_hits);
+                if (required_hits == 0 && required_uses > 0) {
+                    reward += tuning.required_use_weight;
+                }
+                if (has_required_slot && required_hits == 0 && required_uses == 0) {
+                    reward -= 0.75 * tuning.required_use_weight;
+                }
                 
                 if (wants_p8 && p8_hits == 0 && required_hits == 0) {
                     reward -= tuning.p8_miss_penalty;
@@ -241,16 +358,20 @@ public:
                 reward = std::max(tuning.min_reward, reward);
                 advanced_signal = (p7_hits + p8_hits + required_hits) > 0;
                 
-                if (tuning.require_p8_signal_for_stop) {
-                    stopping_signal = (required_hits > 0 || p8_hits > 0 || (!basic_solved && p7_hits > 0));
+                if (has_required_slot) {
+                    stopping_signal = (required_hits > 0 || required_uses > 0);
+                } else if (tuning.require_p8_signal_for_stop) {
+                    stopping_signal = (required_hits > 0 || p8_hits > 0 || (!basic_solved && (p7_hits > 0 || required_uses > 0)));
                 } else {
-                    stopping_signal = (!basic_solved || advanced_signal);
+                    stopping_signal = (!basic_solved || advanced_signal || required_uses > 0);
                 }
 
                 if (stats != nullptr) {
                     ++stats->advanced_evals;
                     stats->advanced_p7_hits += p7_hits;
                     stats->advanced_p8_hits += p8_hits;
+                    stats->required_strategy_analyzed += required_analyzed;
+                    stats->required_strategy_uses += required_uses;
                     stats->required_strategy_hits += required_hits;
                 }
             }

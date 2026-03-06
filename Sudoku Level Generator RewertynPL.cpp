@@ -118,6 +118,9 @@ inline void handle_result(const GenerateRunResult& result, const GenerateRunConf
     std::cout << "Logic steps total: " << result.logic_steps_total << "\n";
     std::cout << "Naked hit/use: " << result.strategy_naked_hit << "/" << result.strategy_naked_use << "\n";
     std::cout << "Hidden hit/use: " << result.strategy_hidden_hit << "/" << result.strategy_hidden_use << "\n";
+    std::cout << "MCTS advanced evals: " << result.mcts_advanced_evals << "\n";
+    std::cout << "MCTS required analyzed: " << result.mcts_required_strategy_analyzed << "\n";
+    std::cout << "MCTS required hit/use: " << result.mcts_required_strategy_hit << "/" << result.mcts_required_strategy_use << "\n";
     std::cout << "VIP score: " << std::fixed << std::setprecision(3) << result.vip_score << "\n";
     std::cout << "VIP grade: " << result.vip_grade << "\n";
     std::cout << "VIP contract: " << (result.vip_contract_ok ? "ok" : "fail") << "\n";

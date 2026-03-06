@@ -194,6 +194,10 @@ struct GenerateRunResult {
     uint64_t strategy_naked_hit = 0;
     uint64_t strategy_hidden_use = 0;
     uint64_t strategy_hidden_hit = 0;
+    uint64_t mcts_advanced_evals = 0;
+    uint64_t mcts_required_strategy_analyzed = 0;
+    uint64_t mcts_required_strategy_use = 0;
+    uint64_t mcts_required_strategy_hit = 0;
 
     double vip_score = 0.0;
     std::string vip_grade = "none";

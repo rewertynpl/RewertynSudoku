@@ -25,7 +25,7 @@ inline ApplyResult apply_aligned_pair_exclusion(CandidateState& st, StrategyStat
     ++s.use_count;
     
     // Optymalizacja wczesnego wyjścia (w siatkach gęstych to się nie wydarzy)
-    if (st.board->empty_cells > (st.topo->nn - st.topo->n)) {
+    if (st.topo->n > 20 || st.board->empty_cells > (st.topo->nn - 2 * st.topo->n)) {
         s.elapsed_ns += st.now_ns() - t0;
         return ApplyResult::NoProgress;
     }
@@ -37,7 +37,7 @@ inline ApplyResult apply_aligned_pair_exclusion(CandidateState& st, StrategyStat
     for (int a = 0; a < nn; ++a) {
         if (st.board->values[a] != 0) continue;
         const uint64_t ma = st.cands[a];
-        if (ma == 0ULL) continue;
+        if (ma == 0ULL || std::popcount(ma) > 6) continue;
         
         for (int b = a + 1; b < nn; ++b) {
             if (st.board->values[b] != 0) continue;
@@ -45,7 +45,7 @@ inline ApplyResult apply_aligned_pair_exclusion(CandidateState& st, StrategyStat
             if (!st.is_peer(a, b)) continue;
             
             const uint64_t mb = st.cands[b];
-            if (mb == 0ULL) continue;
+            if (mb == 0ULL || std::popcount(mb) > 6) continue;
 
             uint64_t bad_a = 0ULL;
             uint64_t bad_b = 0ULL;
@@ -136,7 +136,7 @@ inline ApplyResult apply_aligned_triple_exclusion(CandidateState& st, StrategySt
     const uint64_t t0 = st.now_ns();
     ++s.use_count;
     
-    if (st.board->empty_cells > (st.topo->nn - st.topo->n)) {
+    if (st.topo->n > 16 || st.board->empty_cells > (st.topo->nn - 3 * st.topo->n)) {
         s.elapsed_ns += st.now_ns() - t0;
         return ApplyResult::NoProgress;
     }
@@ -148,14 +148,14 @@ inline ApplyResult apply_aligned_triple_exclusion(CandidateState& st, StrategySt
         if (st.board->values[a] != 0) continue;
         const uint64_t ma = st.cands[a];
         // Heurystyczne cięcie wydajnościowe: nie wchodzimy w duże trójki
-        if (ma == 0ULL || std::popcount(ma) > 8) continue;
+        if (ma == 0ULL || std::popcount(ma) > 5) continue;
         
         for (int b = a + 1; b < nn; ++b) {
             if (st.board->values[b] != 0) continue;
             if (!st.is_peer(a, b)) continue;
             
             const uint64_t mb = st.cands[b];
-            if (mb == 0ULL || std::popcount(mb) > 8) continue;
+            if (mb == 0ULL || std::popcount(mb) > 5) continue;
             
             for (int c = b + 1; c < nn; ++c) {
                 if (st.board->values[c] != 0) continue;
@@ -163,7 +163,7 @@ inline ApplyResult apply_aligned_triple_exclusion(CandidateState& st, StrategySt
                 if (!st.is_peer(a, c) || !st.is_peer(b, c)) continue;
                 
                 const uint64_t mc = st.cands[c];
-                if (mc == 0ULL || std::popcount(mc) > 8) continue;
+                if (mc == 0ULL || std::popcount(mc) > 5) continue;
 
                 uint64_t bad_a = 0ULL;
                 

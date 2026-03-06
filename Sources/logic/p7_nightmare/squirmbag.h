@@ -25,7 +25,7 @@ inline ApplyResult apply_squirmbag(CandidateState& st, StrategyStats& s, Generic
     
     // Optymalizacja wczesnego wyjścia:
     // Starfish na planszach poniżej 5x5 matematycznie nie ma racji bytu
-    if (n < 5) {
+    if (n < 5 || n > 25 || st.board->empty_cells > (st.topo->nn - 3 * n)) {
         s.elapsed_ns += st.now_ns() - t0;
         return ApplyResult::NoProgress;
     }
@@ -51,14 +51,16 @@ inline ApplyResult apply_squirmbag(CandidateState& st, StrategyStats& s, Generic
         int col_count = 0;
         
         // Zbieramy użyteczne linie (takie gdzie ryba w ogóle ma sens)
+        const int active_cap = std::min(n, 14);
         for (int rr = 0; rr < n; ++rr) {
             const int cnt = std::popcount(sp.fish_row_masks[rr]);
-            if (cnt >= 2 && cnt <= 5) sp.active_rows[row_count++] = rr;
+            if (cnt >= 2 && cnt <= 5 && row_count < active_cap) sp.active_rows[row_count++] = rr;
         }
         for (int cc = 0; cc < n; ++cc) {
             const int cnt = std::popcount(sp.fish_col_masks[cc]);
-            if (cnt >= 2 && cnt <= 5) sp.active_cols[col_count++] = cc;
+            if (cnt >= 2 && cnt <= 5 && col_count < active_cap) sp.active_cols[col_count++] = cc;
         }
+        if (row_count < 5 && col_count < 5) continue;
 
         // ====================================================================
         // Faza 1: Szukanie po rzędach (Row-based Squirmbag / Starfish)

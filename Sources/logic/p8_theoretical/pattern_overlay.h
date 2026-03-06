@@ -16,6 +16,7 @@
 #include "../../config/bit_utils.h"
 #include "../logic_result.h"
 #include "../shared/exact_pattern_scratchpad.h"
+#include "../shared/state_probe.h"
 
 // DoĹ‚Ä…czamy wymagane moduły dla POM 
 #include "msls.h"
@@ -23,21 +24,7 @@
 namespace sudoku_hpc::logic::p8_theoretical {
 
 inline bool pom_propagate_singles(CandidateState& st, int max_steps) {
-    const int nn = st.topo->nn;
-    for (int step = 0; step < max_steps; ++step) {
-        bool changed = false;
-        for (int idx = 0; idx < nn; ++idx) {
-            if (st.board->values[idx] != 0) continue;
-            const uint64_t m = st.cands[idx];
-            if (m == 0ULL) return false;
-            const int sd = config::single_digit_from_mask(m);
-            if (sd == 0) continue;
-            if (!st.place(idx, sd)) return false;
-            changed = true;
-        }
-        if (!changed) break;
-    }
-    return true;
+    return shared::propagate_singles(st, max_steps);
 }
 
 inline bool pom_probe_candidate_contradiction(
@@ -46,22 +33,7 @@ inline bool pom_probe_candidate_contradiction(
     int d,
     int max_steps,
     shared::ExactPatternScratchpad& sp) {
-    const int nn = st.topo->nn;
-    std::copy_n(st.cands, nn, sp.dyn_cands_backup);
-    std::copy_n(st.board->values.data(), nn, sp.dyn_values_backup);
-    sp.dyn_empty_backup = st.board->empty_cells;
-
-    bool contradiction = false;
-    if (!st.place(idx, d)) {
-        contradiction = true;
-    } else if (!pom_propagate_singles(st, max_steps)) {
-        contradiction = true;
-    }
-
-    std::copy_n(sp.dyn_cands_backup, nn, st.cands);
-    std::copy_n(sp.dyn_values_backup, nn, st.board->values.data());
-    st.board->empty_cells = sp.dyn_empty_backup;
-    return contradiction;
+    return shared::probe_candidate_contradiction(st, idx, d, max_steps, sp);
 }
 
 // ============================================================================
@@ -104,9 +76,7 @@ inline ApplyResult apply_pom_exact(CandidateState& st, StrategyStats& s, Generic
         const uint64_t pm = st.cands[pivot];
         if (pm == 0ULL) continue;
 
-        std::copy_n(st.cands, nn, sp.dyn_cands_backup);
-        std::copy_n(st.board->values.data(), nn, sp.dyn_values_backup);
-        sp.dyn_empty_backup = st.board->empty_cells;
+        shared::snapshot_state(st, sp);
 
         uint64_t inter_cands[shared::ExactPatternScratchpad::MAX_NN]{};
         for (int i = 0; i < nn; ++i) inter_cands[i] = ~0ULL;
@@ -120,9 +90,7 @@ inline ApplyResult apply_pom_exact(CandidateState& st, StrategyStats& s, Generic
             const uint64_t bit = config::bit_lsb(w);
             const int d = config::bit_ctz_u64(bit) + 1;
 
-            std::copy_n(sp.dyn_cands_backup, nn, st.cands);
-            std::copy_n(sp.dyn_values_backup, nn, st.board->values.data());
-            st.board->empty_cells = sp.dyn_empty_backup;
+            shared::restore_state(st, sp);
 
             bool contradiction = false;
             if (!st.place(pivot, d)) {
@@ -146,9 +114,7 @@ inline ApplyResult apply_pom_exact(CandidateState& st, StrategyStats& s, Generic
             }
         }
 
-        std::copy_n(sp.dyn_cands_backup, nn, st.cands);
-        std::copy_n(sp.dyn_values_backup, nn, st.board->values.data());
-        st.board->empty_cells = sp.dyn_empty_backup;
+        shared::restore_state(st, sp);
 
         if (contradiction_mask != 0ULL) {
             const ApplyResult er = st.eliminate(pivot, contradiction_mask);

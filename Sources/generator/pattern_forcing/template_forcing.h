@@ -22,7 +22,7 @@ class TemplateForcing {
 public:
     // Wstrzykuje "zalążek" łańcucha XY/Forcing Chain.
     // Tworzy 4 komórki w układzie prostokąta przypisując im zazębiające się pary cyfr.
-    static bool build(const GenericTopology& topo, std::mt19937_64& rng, ExactPatternTemplatePlan& plan) {
+    static bool build(const GenericTopology& topo, std::mt19937_64& rng, ExactPatternTemplatePlan& plan, bool dynamic_mode = false) {
         plan = {}; // Reset struktury
 
         const int n = topo.n;
@@ -66,6 +66,10 @@ public:
         for (int g = 0; g < 64 && (d3 == d1 || d3 == d2); ++g) {
             d3 = static_cast<int>(rng() % static_cast<uint64_t>(n));
         }
+        int d4 = d3;
+        for (int g = 0; g < 64 && (d4 == d1 || d4 == d2 || d4 == d3); ++g) {
+            d4 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+        }
 
         // Maski bivalue (zazębiające się) łączące cyfry w zamknięty łańcuch (graf)
         const uint64_t m12 = (1ULL << d1) | (1ULL << d2);
@@ -81,6 +85,28 @@ public:
         plan.add_anchor(a, m23 & full);
         plan.add_anchor(b, m13 & full);
         plan.add_anchor(t, m12 & full);
+
+        if (dynamic_mode) {
+            // Dodatkowe bivalue/trivalue odnogi zwiększają szansę na forcing branch.
+            int rr = r2;
+            int cc = c1;
+            if (c1 + 1 < n && c1 + 1 != c2) cc = c1 + 1;
+            else if (c1 - 1 >= 0 && c1 - 1 != c2) cc = c1 - 1;
+            const int x1 = rr * n + cc;
+
+            rr = r1;
+            cc = c2;
+            if (r1 + 1 < n && r1 + 1 != r2) rr = r1 + 1;
+            else if (r1 - 1 >= 0 && r1 - 1 != r2) rr = r1 - 1;
+            const int x2 = rr * n + cc;
+
+            const uint64_t m24 = (1ULL << d2) | (1ULL << d4);
+            const uint64_t m34 = (1ULL << d3) | (1ULL << d4);
+            const uint64_t m134 = m13 | (1ULL << d4);
+            plan.add_anchor(x1, m24 & full);
+            plan.add_anchor(x2, m34 & full);
+            plan.add_anchor(((r1 + r2) / 2) * n + ((c1 + c2) / 2), m134 & full);
+        }
 
         plan.valid = (plan.anchor_count >= 4);
         return plan.valid;

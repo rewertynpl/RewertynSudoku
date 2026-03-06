@@ -104,6 +104,13 @@ struct AttemptPerfStats {
     uint64_t strategy_naked_hit = 0;
     uint64_t strategy_hidden_use = 0;
     uint64_t strategy_hidden_hit = 0;
+    uint64_t mcts_advanced_evals = 0;
+    uint64_t mcts_required_strategy_analyzed = 0;
+    uint64_t mcts_required_strategy_use = 0;
+    uint64_t mcts_required_strategy_hit = 0;
+    int pattern_template_score = 0;
+    int pattern_best_template_score = 0;
+    bool pattern_exact_template = false;
 };
 
 // Pomocnicza metoda oceniająca, czy oczekiwany poziom został spełniony
@@ -279,6 +286,14 @@ inline bool generate_one_generic(
     const auto solved_t0 = std::chrono::steady_clock::now();
     bool solved_ok = false;
     const uint8_t* dig_protected_cells = nullptr;
+    const uint64_t* dig_allowed_masks = nullptr;
+    const int* dig_anchor_idx = nullptr;
+    const uint64_t* dig_anchor_masks = nullptr;
+    int dig_anchor_count = 0;
+    bool dig_exact_template = false;
+    int dig_template_score = 0;
+    int dig_best_template_score = 0;
+    pattern_forcing::PatternKind dig_pattern_kind = pattern_forcing::PatternKind::None;
     
     if (cfg.pattern_forcing_enabled) {
         const int pf_tries = std::max(1, cfg.pattern_forcing_tries);
@@ -299,6 +314,20 @@ inline bool generate_one_generic(
             if (solved_ok && cfg.pattern_forcing_lock_anchors && pf_seed.protected_cells != nullptr &&
                 !pf_seed.protected_cells->empty()) {
                 dig_protected_cells = pf_seed.protected_cells->data();
+            }
+            if (solved_ok && pf_seed.allowed_masks != nullptr && !pf_seed.allowed_masks->empty()) {
+                dig_allowed_masks = pf_seed.allowed_masks->data();
+                dig_anchor_idx = pf_seed.anchor_idx;
+                dig_anchor_masks = pf_seed.anchor_masks;
+                dig_anchor_count = pf_seed.anchor_count;
+                dig_exact_template = pf_seed.exact_template;
+                dig_template_score = pf_seed.template_score;
+                dig_best_template_score = pf_seed.best_template_score;
+                dig_pattern_kind = pf_seed.kind;
+            }
+            if (!solved_ok) {
+                pattern_forcing::note_template_attempt_feedback(
+                    cfg.required_strategy, pf_seed.kind, pf_seed.exact_template, pf_seed.template_score, 0, 0, 0);
             }
             if (budget_ptr != nullptr && budget_ptr->aborted()) break;
         }
@@ -331,15 +360,22 @@ inline bool generate_one_generic(
     // ETAP 2: Wykopywanie dziur w planszy i ocena przez Bottleneck Digger
     // ------------------------------------------------------------------------
     const auto dig_t0 = std::chrono::steady_clock::now();
+    mcts_digger::GenericMctsBottleneckDigger::RunStats mcts_stats{};
     if (cfg.mcts_digger_enabled) {
         mcts_digger::GenericMctsBottleneckDigger mcts_digger;
-        mcts_digger::GenericMctsBottleneckDigger::RunStats mcts_stats{};
         
         const bool dig_ok = mcts_digger.dig_into(
             candidate.solution, topo, cfg, rng, uniq, logic,
-            candidate.puzzle, candidate.clues, dig_protected_cells, budget_ptr, &mcts_stats);
+            candidate.puzzle, candidate.clues, dig_protected_cells,
+            dig_allowed_masks, dig_anchor_idx, dig_anchor_masks, dig_anchor_count, dig_exact_template,
+            budget_ptr, &mcts_stats);
             
         if (!dig_ok) {
+            pattern_forcing::note_template_attempt_feedback(
+                cfg.required_strategy, dig_pattern_kind, dig_exact_template, dig_template_score,
+                static_cast<int>(mcts_stats.required_strategy_analyzed),
+                static_cast<int>(mcts_stats.required_strategy_uses),
+                static_cast<int>(mcts_stats.required_strategy_hits));
             if (budget_ptr != nullptr && budget_ptr->aborted()) {
                 if (budget_ptr->aborted_by_pause) {
                     reason = RejectReason::None;
@@ -361,7 +397,25 @@ inline bool generate_one_generic(
         perf_out->dig_elapsed_ns += static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now() - dig_t0).count());
+        perf_out->mcts_advanced_evals += static_cast<uint64_t>(std::max(0, mcts_stats.advanced_evals));
+        perf_out->mcts_required_strategy_analyzed += static_cast<uint64_t>(std::max(0, mcts_stats.required_strategy_analyzed));
+        perf_out->mcts_required_strategy_use += static_cast<uint64_t>(std::max(0, mcts_stats.required_strategy_uses));
+        perf_out->mcts_required_strategy_hit += static_cast<uint64_t>(std::max(0, mcts_stats.required_strategy_hits));
+        perf_out->pattern_template_score = dig_template_score;
+        perf_out->pattern_best_template_score = dig_best_template_score;
+        perf_out->pattern_exact_template = dig_exact_template;
     }
+
+    auto note_pattern_feedback = [&]() {
+        pattern_forcing::note_template_attempt_feedback(
+            cfg.required_strategy,
+            dig_pattern_kind,
+            dig_exact_template,
+            dig_template_score,
+            static_cast<int>(mcts_stats.required_strategy_analyzed),
+            static_cast<int>(mcts_stats.required_strategy_uses),
+            static_cast<int>(mcts_stats.required_strategy_hits));
+    };
 
     // ------------------------------------------------------------------------
     // ETAP 3: Quick Prefilter
@@ -374,6 +428,7 @@ inline bool generate_one_generic(
                 std::chrono::steady_clock::now() - prefilter_t0).count());
     }
     if (!prefilter_ok) {
+        note_pattern_feedback();
         reason = RejectReason::Prefilter;
         return false;
     }
@@ -395,12 +450,14 @@ inline bool generate_one_generic(
 
         if (quality_contract_enabled) {
             if (!quality_metrics.symmetry_ok) {
+                note_pattern_feedback();
                 reason = RejectReason::DistributionBias;
                 return false;
             }
             if (distribution_filter_enabled) {
                 if (!(quality_metrics.normalized_entropy >= quality_metrics.entropy_threshold) || 
                     !quality_metrics.distribution_balance_ok) {
+                    note_pattern_feedback();
                     reason = RejectReason::DistributionBias;
                     return false;
                 }
@@ -423,6 +480,7 @@ inline bool generate_one_generic(
                 std::chrono::steady_clock::now() - logic_t0).count());
     }
     if (logic_result.timed_out) {
+        note_pattern_feedback();
         if (budget_ptr != nullptr && budget_ptr->aborted_by_pause) {
             reason = RejectReason::None;
             return false;
@@ -442,17 +500,20 @@ inline bool generate_one_generic(
 
     if (!cfg.fast_test_mode) {
         if (!evaluate_difficulty_contract_generic(logic_result, cfg.difficulty_level_required)) {
+            note_pattern_feedback();
             reason = RejectReason::Strategy;
             return false;
         }
 
         const bool contract_ok = evaluate_required_strategy_contract_generic(logic_result, cfg, cfg.required_strategy, strategy_info);
         if (cfg.required_strategy != RequiredStrategy::None && !contract_ok) {
+            note_pattern_feedback();
             reason = RejectReason::Strategy;
             return false;
         }
     }
     if (cfg.strict_logical && !logic_result.solved && cfg.required_strategy != RequiredStrategy::Backtracking) {
+        note_pattern_feedback();
         reason = RejectReason::Logic;
         return false;
     }
@@ -481,6 +542,7 @@ inline bool generate_one_generic(
         record_uniqueness_perf(uniq_budget, uniq_elapsed_ns);
         
         if (solutions < 0) {
+            note_pattern_feedback();
             if (uniq_budget_ptr != nullptr && uniq_budget_ptr->aborted_by_pause) {
                 reason = RejectReason::None;
                 return false;
@@ -490,6 +552,7 @@ inline bool generate_one_generic(
             return false;
         }
         if (solutions != 1) {
+            note_pattern_feedback();
             reason = RejectReason::Uniqueness;
             return false;
         }
@@ -504,6 +567,7 @@ inline bool generate_one_generic(
         
         if (has_replay_out) *replay_out = replay;
         if (!replay.ok) {
+            note_pattern_feedback();
             reason = RejectReason::Replay;
             return false;
         }
@@ -515,10 +579,12 @@ inline bool generate_one_generic(
     }
     
     if (has_quality_contract_out && !post_processing::quality_contract_passed(*quality_contract_out, cfg)) {
+        note_pattern_feedback();
         reason = RejectReason::DistributionBias;
         return false;
     }
     
+    note_pattern_feedback();
     reason = RejectReason::None;
     return true; // Sukces, plansza wygenerowana i obłożona wszelkimi certyfikatami.
 }

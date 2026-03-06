@@ -10,7 +10,9 @@
 #include <cstdint>
 
 #include "../../core/candidate_state.h"
+#include "../../config/bit_utils.h"
 #include "../logic_result.h"
+#include "../shared/als_builder.h"
 
 namespace sudoku_hpc::logic::p7_nightmare {
 
@@ -29,12 +31,48 @@ inline int other_digit_in_bivalue(uint64_t bivalue_mask, int known_digit) {
     return static_cast<int>(std::countr_zero(other)) + 1;
 }
 
+inline int death_blossom_collect_als_holders(
+    const CandidateState& st,
+    const shared::ALS& als,
+    uint64_t bit,
+    int* out) {
+    const int nn = st.topo->nn;
+    const int words = (nn + 63) >> 6;
+    int cnt = 0;
+    for (int w = 0; w < words; ++w) {
+        uint64_t m = als.cell_mask[w];
+        while (m != 0ULL) {
+            const uint64_t lsb = config::bit_lsb(m);
+            const int b = config::bit_ctz_u64(lsb);
+            const int idx = (w << 6) + b;
+            if (idx < nn && (st.cands[idx] & bit) != 0ULL) out[cnt++] = idx;
+            m = config::bit_clear_lsb_u64(m);
+        }
+    }
+    return cnt;
+}
+
+inline bool death_blossom_all_holders_see_pivot(
+    const CandidateState& st,
+    int pivot,
+    const int* holders,
+    int count) {
+    for (int i = 0; i < count; ++i) {
+        if (!st.is_peer(pivot, holders[i])) return false;
+    }
+    return count > 0;
+}
+
 inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, GenericLogicCertifyResult& r) {
     const uint64_t t0 = st.now_ns();
     ++s.use_count;
 
     const int n = st.topo->n;
     const int nn = st.topo->nn;
+    if (n > 25 || st.board->empty_cells > (nn - 2 * n)) {
+        s.elapsed_ns += st.now_ns() - t0;
+        return ApplyResult::NoProgress;
+    }
     bool progress = false;
 
     // petals[digit-1][] keeps peer bivalue cells containing this pivot digit.
@@ -124,6 +162,87 @@ inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, Gen
         }
     }
 
+    if (!progress) {
+        auto& sp = shared::exact_pattern_scratchpad();
+        const int als_cnt = shared::build_als_list(st, 2, 4);
+        const int limit = std::min(als_cnt, 96);
+        int pivot_digits[6]{};
+        int pa[8]{}, pb[8]{}, za[8]{}, zb[8]{};
+
+        for (int pivot = 0; pivot < nn; ++pivot) {
+            if (st.board->values[pivot] != 0) continue;
+            const uint64_t pivot_mask = st.cands[pivot];
+            const int pivot_pc = std::popcount(pivot_mask);
+            if (pivot_pc < 3 || pivot_pc > 6) continue;
+
+            int pivot_digit_cnt = 0;
+            uint64_t w = pivot_mask;
+            while (w != 0ULL && pivot_digit_cnt < 6) {
+                const uint64_t bit = config::bit_lsb(w);
+                w = config::bit_clear_lsb_u64(w);
+                pivot_digits[pivot_digit_cnt++] = config::bit_ctz_u64(bit) + 1;
+            }
+
+            for (int ia = 0; ia < pivot_digit_cnt; ++ia) {
+                const uint64_t da = 1ULL << (pivot_digits[ia] - 1);
+                for (int ib = ia + 1; ib < pivot_digit_cnt; ++ib) {
+                    const uint64_t db = 1ULL << (pivot_digits[ib] - 1);
+                    for (int a = 0; a < limit; ++a) {
+                        const shared::ALS& als_a = sp.als_list[a];
+                        if ((als_a.digit_mask & da) == 0ULL) continue;
+                        const int pa_cnt = death_blossom_collect_als_holders(st, als_a, da, pa);
+                        if (!death_blossom_all_holders_see_pivot(st, pivot, pa, pa_cnt)) continue;
+
+                        for (int b = a + 1; b < limit; ++b) {
+                            const shared::ALS& als_b = sp.als_list[b];
+                            if ((als_b.digit_mask & db) == 0ULL) continue;
+                            const int pb_cnt = death_blossom_collect_als_holders(st, als_b, db, pb);
+                            if (!death_blossom_all_holders_see_pivot(st, pivot, pb, pb_cnt)) continue;
+
+                            uint64_t zmask = (als_a.digit_mask & als_b.digit_mask) & ~(da | db);
+                            while (zmask != 0ULL) {
+                                const uint64_t z = config::bit_lsb(zmask);
+                                zmask = config::bit_clear_lsb_u64(zmask);
+                                const int za_cnt = death_blossom_collect_als_holders(st, als_a, z, za);
+                                const int zb_cnt = death_blossom_collect_als_holders(st, als_b, z, zb);
+                                if (za_cnt <= 0 || zb_cnt <= 0) continue;
+
+                                for (int t = 0; t < nn; ++t) {
+                                    if (t == pivot || st.board->values[t] != 0) continue;
+                                    if (shared::als_cell_in(als_a, t) || shared::als_cell_in(als_b, t)) continue;
+                                    if ((st.cands[t] & z) == 0ULL) continue;
+
+                                    bool sees_all = true;
+                                    for (int i = 0; i < za_cnt; ++i) {
+                                        if (!st.is_peer(t, za[i])) {
+                                            sees_all = false;
+                                            break;
+                                        }
+                                    }
+                                    if (!sees_all) continue;
+                                    for (int i = 0; i < zb_cnt; ++i) {
+                                        if (!st.is_peer(t, zb[i])) {
+                                            sees_all = false;
+                                            break;
+                                        }
+                                    }
+                                    if (!sees_all) continue;
+
+                                    const ApplyResult er = st.eliminate(t, z);
+                                    if (er == ApplyResult::Contradiction) {
+                                        s.elapsed_ns += st.now_ns() - t0;
+                                        return er;
+                                    }
+                                    progress = progress || (er == ApplyResult::Progress);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (progress) {
         ++s.hit_count;
         r.used_death_blossom = true;
@@ -136,4 +255,3 @@ inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, Gen
 }
 
 } // namespace sudoku_hpc::logic::p7_nightmare
-
