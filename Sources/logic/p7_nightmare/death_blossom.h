@@ -265,7 +265,7 @@ inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, Gen
 
     const int n = st.topo->n;
     const int nn = st.topo->nn;
-    if (n > 36 || st.board->empty_cells > (nn - std::max((3 * n) / 2, n))) {
+    if (n > 49 || st.board->empty_cells > (nn - std::max((5 * n) / 4, n))) {
         s.elapsed_ns += st.now_ns() - t0;
         return ApplyResult::NoProgress;
     }
@@ -281,7 +281,7 @@ inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, Gen
 
         const uint64_t pivot_mask = st.cands[pivot];
         const int pivot_pc = std::popcount(pivot_mask);
-        if (pivot_pc < 3 || pivot_pc > 6) continue;
+        if (pivot_pc < 3 || pivot_pc > 7) continue;
 
         for (int i = 0; i < n; ++i) {
             petal_cnt[i] = 0;
@@ -417,9 +417,10 @@ inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, Gen
 
     if (!progress) {
         auto& sp = shared::exact_pattern_scratchpad();
-        const int als_max_size = (n <= 16) ? 4 : ((n <= 25) ? 5 : 4);
-        const int als_cnt = shared::build_als_list(st, 2, als_max_size);
-        const int limit = std::min(als_cnt, std::clamp(96 + 2 * n, 96, 160));
+        const int als_max_size = (n <= 16) ? 5 : ((n <= 25) ? 6 : 5);
+        const int als_min_size = (n <= 25) ? 1 : 2;
+        const int als_cnt = shared::build_als_list(st, als_min_size, als_max_size);
+        const int limit = std::min(als_cnt, std::clamp(128 + 3 * n, 128, 224));
         int pivot_digits[6]{};
         int pa[8]{}, pb[8]{}, za[8]{}, zb[8]{};
 
@@ -427,7 +428,7 @@ inline ApplyResult apply_death_blossom(CandidateState& st, StrategyStats& s, Gen
             if (st.board->values[pivot] != 0) continue;
             const uint64_t pivot_mask = st.cands[pivot];
             const int pivot_pc = std::popcount(pivot_mask);
-            if (pivot_pc < 3 || pivot_pc > 6) continue;
+            if (pivot_pc < 3 || pivot_pc > 7) continue;
 
             int pivot_digit_cnt = 0;
             uint64_t w = pivot_mask;

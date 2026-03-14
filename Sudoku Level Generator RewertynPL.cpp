@@ -123,81 +123,248 @@ inline void install_crash_logging() {
 #endif
 }
 
-inline void handle_result(const GenerateRunResult& result, const GenerateRunConfig& cfg) {
+inline std::string quote_command_arg(std::string_view arg) {
+    bool needs_quotes = false;
+    for (const unsigned char ch : arg) {
+        if (std::isspace(ch) != 0 || ch == '"') {
+            needs_quotes = true;
+            break;
+        }
+    }
+    if (!needs_quotes) {
+        return std::string(arg);
+    }
+    std::string out;
+    out.reserve(arg.size() + 2U);
+    out.push_back('"');
+    for (const char ch : arg) {
+        if (ch == '"') {
+            out += "\\\"";
+        } else {
+            out.push_back(ch);
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+inline std::string join_command_line(int argc, char** argv) {
+    std::ostringstream out;
+    for (int i = 0; i < argc; ++i) {
+        if (i != 0) {
+            out << ' ';
+        }
+        out << quote_command_arg(argv[i] != nullptr ? std::string_view(argv[i]) : std::string_view{});
+    }
+    return out.str();
+}
+
+inline StrategySmokeVariant detect_report_variant(const GenerateRunConfig& cfg) {
+    return (cfg.box_rows != cfg.box_cols) ? StrategySmokeVariant::Asymmetric : StrategySmokeVariant::Primary;
+}
+
+inline void write_result_summary(std::ostream& out, const GenerateRunResult& result, const GenerateRunConfig& cfg) {
     const auto audit_summary = logic::GenericLogicCertify::build_audit_summary();
-    std::cout << "\n=== Generation Summary ===\n";
-    std::cout << "Accepted: " << result.accepted << "\n";
-    std::cout << "Written: " << result.written << "\n";
-    std::cout << "Attempts: " << result.attempts << "\n";
+    out << "\n=== Generation Summary ===\n";
+    out << "Accepted: " << result.accepted << "\n";
+    out << "Written: " << result.written << "\n";
+    out << "Attempts: " << result.attempts << "\n";
     if (cfg.required_strategy != RequiredStrategy::None) {
-        std::cout << "Required strategy: " << to_string(cfg.required_strategy) << "\n";
-        std::cout << "Required strategy use (certifier): "
-                  << result.certifier_required_strategy_use << "\n";
-        std::cout << "Required strategy hit (certifier): "
-                  << result.certifier_required_strategy_hit << "\n";
-        std::cout << "Required strategy analyzed (certifier): "
-                  << result.certifier_required_strategy_analyzed << "\n";
-        std::cout << "Required strategy use/hit (certifier): "
-                  << result.certifier_required_strategy_use << "/"
-                  << result.certifier_required_strategy_hit << "\n";
-        std::cout << "MCTS required use/hit: "
-                  << result.mcts_required_strategy_use << "/"
-                  << result.mcts_required_strategy_hit << "\n";
-        std::cout << "MCTS required analyzed: "
-                  << result.mcts_required_strategy_analyzed << "\n";
+        out << "Required strategy: " << to_string(cfg.required_strategy) << "\n";
+        out << "Required strategy use (certifier): "
+            << result.certifier_required_strategy_use << "\n";
+        out << "Required strategy hit (certifier): "
+            << result.certifier_required_strategy_hit << "\n";
+        out << "Required strategy analyzed (certifier): "
+            << result.certifier_required_strategy_analyzed << "\n";
+        out << "Required strategy use/hit (certifier): "
+            << result.certifier_required_strategy_use << "/"
+            << result.certifier_required_strategy_hit << "\n";
+        out << "MCTS required use/hit: "
+            << result.mcts_required_strategy_use << "/"
+            << result.mcts_required_strategy_hit << "\n";
+        out << "MCTS required analyzed: "
+            << result.mcts_required_strategy_analyzed << "\n";
     }
-    std::cout << "Rejected: " << result.rejected << "\n";
-    std::cout << "Measurement profile: " << result.measurement_profile << "\n";
-    std::cout << "Effective clue range: " << result.effective_min_clues << "-" << result.effective_max_clues << "\n";
-    std::cout << "  - Prefilter: " << result.reject_prefilter << "\n";
-    std::cout << "  - Logic: " << result.reject_logic << "\n";
-    std::cout << "  - Uniqueness: " << result.reject_uniqueness << "\n";
-    std::cout << "  - StrategyStageRejects: " << result.reject_strategy << "\n";
-    std::cout << "  - Replay: " << result.reject_replay << "\n";
-    std::cout << "  - DistributionBias: " << result.reject_distribution_bias << "\n";
-    std::cout << "  - UniquenessBudget: " << result.reject_uniqueness_budget << "\n";
-    std::cout << "Uniqueness calls: " << result.uniqueness_calls << "\n";
-    std::cout << "Uniqueness nodes: " << result.uniqueness_nodes << "\n";
-    std::cout << "Uniqueness total: " << std::fixed << std::setprecision(3) << result.uniqueness_elapsed_ms << " ms\n";
-    std::cout << "Uniqueness avg: " << std::fixed << std::setprecision(3) << result.uniqueness_avg_ms << " ms/call\n";
-    std::cout << "CPU backend: " << result.cpu_backend_selected << "\n";
-    std::cout << "Kernel time: " << std::fixed << std::setprecision(3) << result.kernel_time_ms << " ms\n";
-    std::cout << "Kernel calls: " << result.kernel_calls << "\n";
-    std::cout << "Backend efficiency score: " << std::fixed << std::setprecision(3) << result.backend_efficiency_score << "\n";
-    std::cout << "Asymmetry efficiency index: " << std::fixed << std::setprecision(3) << result.asymmetry_efficiency_index << "\n";
-    std::cout << "Logic steps total: " << result.logic_steps_total << "\n";
-    std::cout << "Naked hit/use: " << result.strategy_naked_hit << "/" << result.strategy_naked_use << "\n";
-    std::cout << "Hidden hit/use: " << result.strategy_hidden_hit << "/" << result.strategy_hidden_use << "\n";
-    std::cout << "MCTS advanced evals: " << result.mcts_advanced_evals << "\n";
+    out << "Rejected: " << result.rejected << "\n";
+    out << "Measurement profile: " << result.measurement_profile << "\n";
+    out << "Effective clue range: " << result.effective_min_clues << "-" << result.effective_max_clues << "\n";
+    out << "  - Prefilter: " << result.reject_prefilter << "\n";
+    out << "  - Logic: " << result.reject_logic << "\n";
+    out << "  - Uniqueness: " << result.reject_uniqueness << "\n";
+    out << "  - StrategyStageRejects: " << result.reject_strategy << "\n";
+    out << "  - Replay: " << result.reject_replay << "\n";
+    out << "  - DistributionBias: " << result.reject_distribution_bias << "\n";
+    out << "  - UniquenessBudget: " << result.reject_uniqueness_budget << "\n";
+    out << "Uniqueness calls: " << result.uniqueness_calls << "\n";
+    out << "Uniqueness nodes: " << result.uniqueness_nodes << "\n";
+    out << "Uniqueness total: " << std::fixed << std::setprecision(3) << result.uniqueness_elapsed_ms << " ms\n";
+    out << "Uniqueness avg: " << std::fixed << std::setprecision(3) << result.uniqueness_avg_ms << " ms/call\n";
+    out << "CPU backend: " << result.cpu_backend_selected << "\n";
+    out << "Kernel time: " << std::fixed << std::setprecision(3) << result.kernel_time_ms << " ms\n";
+    out << "Kernel calls: " << result.kernel_calls << "\n";
+    out << "Backend efficiency score: " << std::fixed << std::setprecision(3) << result.backend_efficiency_score << "\n";
+    out << "Asymmetry efficiency index: " << std::fixed << std::setprecision(3) << result.asymmetry_efficiency_index << "\n";
+    out << "Logic steps total: " << result.logic_steps_total << "\n";
+    out << "Naked hit/use: " << result.strategy_naked_hit << "/" << result.strategy_naked_use << "\n";
+    out << "Hidden hit/use: " << result.strategy_hidden_hit << "/" << result.strategy_hidden_use << "\n";
+    out << "MCTS advanced evals: " << result.mcts_advanced_evals << "\n";
     if (cfg.required_strategy != RequiredStrategy::None) {
-        std::cout << "Certifier required analyzed/use/hit: "
-                  << result.certifier_required_strategy_analyzed << "/"
-                  << result.certifier_required_strategy_use << "/"
-                  << result.certifier_required_strategy_hit << "\n";
+        out << "Certifier required analyzed/use/hit: "
+            << result.certifier_required_strategy_analyzed << "/"
+            << result.certifier_required_strategy_use << "/"
+            << result.certifier_required_strategy_hit << "\n";
     }
-    std::cout << "Pattern exact template used: " << result.pattern_exact_template_used << "\n";
-    std::cout << "Pattern family fallback used: " << result.pattern_family_fallback_used << "\n";
-    std::cout << "Required exact contract met: " << result.required_strategy_exact_contract_met << "\n";
-    std::cout << "Strategy audit canonical full: " << audit_summary.canonical_full << "/" << audit_summary.total_slots << "\n";
-    std::cout << "Strategy audit tighten/rewrite/missing: "
-              << audit_summary.tighten << "/" << audit_summary.rewrite << "/" << audit_summary.exact_template_missing << "\n";
-    std::cout << "Strategy audit parser/certifier/generator exact/fallback/smoke: "
-              << audit_summary.parser_selectable << "/"
-              << audit_summary.certifier_wired << "/"
-              << audit_summary.generator_exact_template_wired << "/"
-              << audit_summary.generator_family_fallback_wired << "/"
-              << audit_summary.smoke_profile_present << "\n";
-    std::cout << "Strategy audit family-fallback-only / exact-required-missing: "
-              << audit_summary.family_fallback_only << "/"
-              << audit_summary.exact_required_but_missing << "\n";
-    std::cout << "VIP score: " << std::fixed << std::setprecision(3) << result.vip_score << "\n";
-    std::cout << "VIP grade: " << result.vip_grade << "\n";
-    std::cout << "VIP contract: " << (result.vip_contract_ok ? "ok" : "fail") << "\n";
-    std::cout << "VIP contract reason: " << result.vip_contract_fail_reason << "\n";
-    std::cout << "Premium signature: " << result.premium_signature << "\n";
-    std::cout << "Premium signature v2: " << result.premium_signature_v2 << "\n";
-    std::cout << "Time: " << std::fixed << std::setprecision(2) << result.elapsed_s << "s\n";
-    std::cout << "Rate: " << std::fixed << std::setprecision(2) << result.accepted_per_sec << " puzzles/s\n";
+    out << "Pattern exact template used: " << result.pattern_exact_template_used << "\n";
+    out << "Pattern family fallback used: " << result.pattern_family_fallback_used << "\n";
+    out << "Required exact contract met: " << result.required_strategy_exact_contract_met << "\n";
+    out << "Strategy audit canonical full: " << audit_summary.canonical_full << "/" << audit_summary.total_slots << "\n";
+    out << "Strategy audit tighten/rewrite/missing: "
+        << audit_summary.tighten << "/" << audit_summary.rewrite << "/" << audit_summary.exact_template_missing << "\n";
+    out << "Strategy audit parser/certifier/generator exact/fallback/smoke: "
+        << audit_summary.parser_selectable << "/"
+        << audit_summary.certifier_wired << "/"
+        << audit_summary.generator_exact_template_wired << "/"
+        << audit_summary.generator_family_fallback_wired << "/"
+        << audit_summary.smoke_profile_present << "\n";
+    out << "Strategy audit family-fallback-only / exact-required-missing: "
+        << audit_summary.family_fallback_only << "/"
+        << audit_summary.exact_required_but_missing << "\n";
+    out << "VIP score: " << std::fixed << std::setprecision(3) << result.vip_score << "\n";
+    out << "VIP grade: " << result.vip_grade << "\n";
+    out << "VIP contract: " << (result.vip_contract_ok ? "ok" : "fail") << "\n";
+    out << "VIP contract reason: " << result.vip_contract_fail_reason << "\n";
+    out << "Premium signature: " << result.premium_signature << "\n";
+    out << "Premium signature v2: " << result.premium_signature_v2 << "\n";
+    out << "Time: " << std::fixed << std::setprecision(2) << result.elapsed_s << "s\n";
+    out << "Rate: " << std::fixed << std::setprecision(2) << result.accepted_per_sec << " puzzles/s\n";
+}
+
+inline std::filesystem::path resolve_direct_report_path(
+    const GenerateRunConfig& cfg,
+    StrategySmokeVariant variant) {
+    const std::filesystem::path configured = cfg.benchmark_output_file;
+    const bool custom_path = !cfg.benchmark_output_file.empty() &&
+                             cfg.benchmark_output_file != "benchmark_report.txt";
+    if (custom_path) {
+        if (configured.is_absolute()) {
+            return configured;
+        }
+        return std::filesystem::current_path() / configured;
+    }
+
+    std::ostringstream name;
+    const auto now = std::chrono::system_clock::now();
+    const auto t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    name << normalize_token(to_string(cfg.required_strategy));
+    if (name.str().empty()) {
+        name << "directcli";
+    }
+    name << '_' << ((variant == StrategySmokeVariant::Asymmetric) ? "asymmetric" : "primary")
+         << '_' << std::put_time(&tm, "%Y%m%d_%H%M%S")
+         << ".txt";
+    return std::filesystem::current_path() / "Debugs" / "smoke_reports" / name.str();
+}
+
+inline void maybe_write_direct_cli_report(
+    const GenerateRunResult& result,
+    const GenerateRunConfig& cfg,
+    bool benchmark_mode,
+    const std::string& command_line,
+    const std::string& debug_log_path) {
+    if (!(benchmark_mode || cfg.required_strategy != RequiredStrategy::None)) {
+        return;
+    }
+
+    const StrategySmokeVariant variant = detect_report_variant(cfg);
+    const StrategySmokeProfile smoke = strategy_smoke_profile(cfg.required_strategy, variant);
+    const uint64_t min_use = smoke.enabled ? smoke.min_required_use : 0ULL;
+    const uint64_t min_hit = smoke.enabled ? smoke.min_required_hit : 0ULL;
+    const bool exact_required = smoke.enabled ? smoke.exact_contract_required : false;
+    const bool pass =
+        result.certifier_required_strategy_use >= min_use &&
+        result.certifier_required_strategy_hit >= min_hit &&
+        (!exact_required || result.required_strategy_exact_contract_met > 0ULL);
+
+    std::ostringstream stdout_capture;
+    stdout_capture << "Debug log file: " << debug_log_path << "\n";
+    stdout_capture << "Author copyright Marcin Matysek (Rewertyn)\n";
+    stdout_capture << "Seed type: uint64_t\n";
+    if (benchmark_mode) {
+        stdout_capture << "Selected maintenance mode is not wired in this runtime build yet. "
+                       << "Running normal generation with provided config.\n";
+    }
+    write_result_summary(stdout_capture, result, cfg);
+
+    std::ostringstream report;
+    report << "Strategy: " << normalize_token(to_string(cfg.required_strategy)) << "\n";
+    report << "Variant: " << (variant == StrategySmokeVariant::Asymmetric ? "asymmetric" : "primary") << "\n";
+    report << "Pass: " << (pass ? "True" : "False") << "\n";
+    report << "ExitCode: 0\n";
+    report << "AppVerifier: n/a (direct-cli)\n";
+    report << "Command: " << command_line << "\n";
+    report << "Required strategy use (certifier): " << result.certifier_required_strategy_use << "\n";
+    report << "Required strategy hit (certifier): " << result.certifier_required_strategy_hit << "\n";
+    report << "Required strategy analyzed (certifier): " << result.certifier_required_strategy_analyzed << "\n";
+    report << "Required strategy use/hit (certifier): "
+           << result.certifier_required_strategy_use << "/" << result.certifier_required_strategy_hit << "\n";
+    report << "MCTS required use/hit: "
+           << result.mcts_required_strategy_use << "/" << result.mcts_required_strategy_hit << "\n";
+    report << "Hit rate: "
+           << (result.certifier_required_strategy_use == 0ULL
+                   ? 0.0
+                   : static_cast<double>(result.certifier_required_strategy_hit) /
+                         static_cast<double>(result.certifier_required_strategy_use))
+           << "\n";
+    report << "Accepted: " << result.accepted << "\n";
+    report << "Attempts: " << result.attempts << "\n";
+    report << "Prefilter: " << result.reject_prefilter << "\n";
+    report << "Logic: " << result.reject_logic << "\n";
+    report << "Written: " << result.written << "\n";
+    report << "seed-built = 0\n";
+    report << "seed-unsolved = 0\n";
+    report << "seed-miss = 0\n";
+    report << "Strategy-stage rejects: " << result.reject_strategy << "\n";
+    report << "Certifier required analyzed/use/hit: "
+           << result.certifier_required_strategy_analyzed << "/"
+           << result.certifier_required_strategy_use << "/"
+           << result.certifier_required_strategy_hit << "\n";
+    report << "Pattern exact template used: " << result.pattern_exact_template_used << "\n";
+    report << "Pattern family fallback used: " << result.pattern_family_fallback_used << "\n";
+    report << "Required exact contract met: " << result.required_strategy_exact_contract_met << "\n";
+    report << "Accepted/sec: " << result.accepted_per_sec << "\n";
+    report << "Min required use/hit: " << min_use << "/" << min_hit << "\n";
+    report << "Exact contract required: " << (exact_required ? "True" : "False") << "\n";
+    report << "Memory trend fail: n/a (direct-cli)\n";
+    report << "Peak working set MB samples: n/a (direct-cli)\n";
+    report << "Peak private MB samples: n/a (direct-cli)\n\n";
+    report << "[StdOut]\n";
+    report << stdout_capture.str() << "\n";
+    report << "[StdErr]\n";
+
+    const std::filesystem::path report_path = resolve_direct_report_path(cfg, variant);
+    std::filesystem::create_directories(report_path.parent_path());
+    std::ofstream out(report_path, std::ios::out | std::ios::trunc);
+    out << report.str();
+    out.flush();
+    log_info("main.direct_report", "wrote report path=" + report_path.string());
+    std::cout << "Direct smoke-style report: " << report_path.string() << "\n";
+}
+
+inline void handle_result(
+    const GenerateRunResult& result,
+    const GenerateRunConfig& cfg,
+    bool benchmark_mode,
+    const std::string& command_line,
+    const std::string& debug_log_path) {
+    write_result_summary(std::cout, result, cfg);
+    maybe_write_direct_cli_report(result, cfg, benchmark_mode, command_line, debug_log_path);
 
     if (cfg.pause_on_exit_windows) {
         std::cout << "\nPress Enter to exit...";
@@ -383,7 +550,7 @@ int main(int argc, char** argv) {
 #endif
 
         log_info("main", "handle_result begin");
-        handle_result(result, cfg);
+        handle_result(result, cfg, parse_result.benchmark_mode, join_command_line(argc, argv), debug_logger().path());
         log_info("main", "handle_result end");
         log_info("main", "program end ok");
         return 0;

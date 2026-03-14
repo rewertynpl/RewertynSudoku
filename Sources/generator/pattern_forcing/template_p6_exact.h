@@ -82,22 +82,35 @@ public:
         const int d2 = random_digit_distinct(n, (1 << d1), rng);
         const int d3 = random_digit_distinct(n, (1 << d1) | (1 << d2), rng);
         const int d4 = random_digit_distinct(n, (1 << d1) | (1 << d2) | (1 << d3), rng);
+        const int d5 = random_digit_distinct(n, (1 << d1) | (1 << d2) | (1 << d3) | (1 << d4), rng);
 
-        const uint64_t pivot_mask = (1ULL << d1) | (1ULL << d2) | (1ULL << d3) | (1ULL << d4);
+        const uint64_t pivot_mask = (1ULL << d1) | (1ULL << d2) | (1ULL << d3) | (1ULL << d4) | (1ULL << d5);
         plan.add_anchor(pivot, pivot_mask);
 
         int row_petal = -1;
+        int row_petal2 = -1;
         int col_petal = -1;
+        int col_petal2 = -1;
         int box_petal = -1;
         for (int cc = 0; cc < n && row_petal < 0; ++cc) {
             const int idx = row * n + cc;
             if (idx == pivot || topo.cell_box[static_cast<size_t>(idx)] == box) continue;
             row_petal = idx;
         }
+        for (int cc = 0; cc < n && row_petal2 < 0; ++cc) {
+            const int idx = row * n + cc;
+            if (idx == pivot || idx == row_petal || topo.cell_box[static_cast<size_t>(idx)] == box) continue;
+            row_petal2 = idx;
+        }
         for (int rr = 0; rr < n && col_petal < 0; ++rr) {
             const int idx = rr * n + col;
             if (idx == pivot || topo.cell_box[static_cast<size_t>(idx)] == box) continue;
             col_petal = idx;
+        }
+        for (int rr = 0; rr < n && col_petal2 < 0; ++rr) {
+            const int idx = rr * n + col;
+            if (idx == pivot || idx == col_petal || topo.cell_box[static_cast<size_t>(idx)] == box) continue;
+            col_petal2 = idx;
         }
         const int house = 2 * n + box;
         const int p0 = topo.house_offsets[static_cast<size_t>(house)];
@@ -110,18 +123,33 @@ public:
         }
         if (row_petal < 0 || col_petal < 0 || box_petal < 0) return false;
 
-        plan.add_anchor(row_petal, (1ULL << d1) | (1ULL << d2));
-        plan.add_anchor(col_petal, (1ULL << d2) | (1ULL << d3));
-        plan.add_anchor(box_petal, (1ULL << d3) | (1ULL << d4));
+        const uint64_t row_mask = (1ULL << d1) | (1ULL << d2);
+        const uint64_t col_mask = (1ULL << d2) | (1ULL << d3);
+        const uint64_t box_mask = (1ULL << d3) | (1ULL << d4);
+        const uint64_t row_mask2 = (1ULL << d1) | (1ULL << d5);
+        const uint64_t col_mask2 = (1ULL << d2) | (1ULL << d5);
+        const uint64_t box_support_mask = (1ULL << d4) | (1ULL << d5);
 
-        int extra = 0;
-        for (int cc = 0; cc < n && extra < 2; ++cc) {
-            const int idx = row * n + cc;
-            if (idx == pivot || idx == row_petal) continue;
-            if (plan.add_anchor(idx, (1ULL << d1) | (1ULL << d4) | (1ULL << d2))) ++extra;
+        plan.add_anchor(row_petal, row_mask);
+        plan.add_anchor(col_petal, col_mask);
+        plan.add_anchor(box_petal, box_mask);
+        if (row_petal2 >= 0) plan.add_anchor(row_petal2, row_mask2);
+        if (col_petal2 >= 0) plan.add_anchor(col_petal2, col_mask2);
+
+        plan.add_skeleton(pivot, pivot_mask);
+        plan.add_skeleton(row_petal, row_mask);
+        plan.add_skeleton(col_petal, col_mask);
+        plan.add_skeleton(box_petal, box_mask);
+        if (row_petal2 >= 0) plan.add_skeleton(row_petal2, row_mask2);
+        if (col_petal2 >= 0) plan.add_skeleton(col_petal2, col_mask2);
+        for (int p = p0; p < p1; ++p) {
+            const int idx = topo.houses_flat[static_cast<size_t>(p)];
+            if (idx == pivot || idx == box_petal) continue;
+            if (topo.cell_row[static_cast<size_t>(idx)] == row || topo.cell_col[static_cast<size_t>(idx)] == col) continue;
+            if (plan.add_skeleton(idx, box_support_mask)) break;
         }
-
-        plan.valid = (plan.anchor_count >= 4);
+        plan.explicit_skeleton = true;
+        plan.valid = (plan.anchor_count >= 4 && plan.skeleton_count >= 5);
         return plan.valid;
     }
 
@@ -142,48 +170,99 @@ public:
         const int d2 = random_digit_distinct(n, (1 << d1), rng);
         const int d3 = random_digit_distinct(n, (1 << d1) | (1 << d2), rng);
         const int d4 = random_digit_distinct(n, (1 << d1) | (1 << d2) | (1 << d3), rng);
+        const int d5 = random_digit_distinct(n, (1 << d1) | (1 << d2) | (1 << d3) | (1 << d4), rng);
+        const int d6 = random_digit_distinct(n, (1 << d1) | (1 << d2) | (1 << d3) | (1 << d4) | (1 << d5), rng);
 
-        const uint64_t row_mask = (1ULL << d1) | (1ULL << d2) | (1ULL << d3);
-        const uint64_t col_mask = (1ULL << d1) | (1ULL << d2) | (1ULL << d4);
-        const uint64_t box_mask = (1ULL << d1) | (1ULL << d3) | (1ULL << d4);
-        const uint64_t inter_mask = (1ULL << d1) | (1ULL << d2);
+        const uint64_t inter_mask = (1ULL << d1) | (1ULL << d2) | (1ULL << d3) | (1ULL << d6);
+        const uint64_t row_box_mask = (1ULL << d1) | (1ULL << d3) | (1ULL << d4) | (1ULL << d6);
+        const uint64_t col_box_mask = (1ULL << d2) | (1ULL << d3) | (1ULL << d5) | (1ULL << d6);
+        const uint64_t row_out_mask = (1ULL << d1) | (1ULL << d4) | (1ULL << d5) | (1ULL << d6);
+        const uint64_t col_out_mask = (1ULL << d2) | (1ULL << d4) | (1ULL << d5) | (1ULL << d6);
+        const uint64_t box_only_mask = (1ULL << d3) | (1ULL << d4) | (1ULL << d5) | (1ULL << d6);
+        const uint64_t row_support_mask = (1ULL << d1) | (1ULL << d4) | (1ULL << d6);
+        const uint64_t col_support_mask = (1ULL << d2) | (1ULL << d5) | (1ULL << d6);
+        const uint64_t box_support_mask = (1ULL << d3) | (1ULL << d5) | (1ULL << d6);
 
-        for (int dc = 0; dc < topo.box_cols; ++dc) {
-            const int idx = row * n + (c0 + dc);
-            if (c0 + dc == col) {
-                plan.add_anchor(idx, inter_mask);
-            } else {
-                plan.add_anchor(idx, row_mask);
-            }
+        int row_box = -1;
+        for (int dc = 0; dc < topo.box_cols && row_box < 0; ++dc) {
+            const int cc = c0 + dc;
+            if (cc == col) continue;
+            row_box = row * n + cc;
         }
-        for (int dr = 0; dr < topo.box_rows; ++dr) {
-            const int idx = (r0 + dr) * n + col;
-            if (r0 + dr == row) continue;
-            plan.add_anchor(idx, col_mask);
+        int col_box = -1;
+        for (int dr = 0; dr < topo.box_rows && col_box < 0; ++dr) {
+            const int rr = r0 + dr;
+            if (rr == row) continue;
+            col_box = rr * n + col;
         }
-
-        int extra = 0;
-        for (int cc = 0; cc < n && extra < 2; ++cc) {
+        int row_out = -1;
+        int row_out2 = -1;
+        for (int cc = 0; cc < n && row_out < 0; ++cc) {
             if (cc >= c0 && cc < c0 + topo.box_cols) continue;
-            if (plan.add_anchor(row * n + cc, row_mask | (1ULL << d4))) ++extra;
+            row_out = row * n + cc;
         }
-        extra = 0;
-        for (int rr = 0; rr < n && extra < 2; ++rr) {
+        for (int cc = 0; cc < n && row_out2 < 0; ++cc) {
+            const int idx = row * n + cc;
+            if (idx == row_out) continue;
+            if (cc >= c0 && cc < c0 + topo.box_cols) continue;
+            row_out2 = idx;
+        }
+        int col_out = -1;
+        int col_out2 = -1;
+        for (int rr = 0; rr < n && col_out < 0; ++rr) {
             if (rr >= r0 && rr < r0 + topo.box_rows) continue;
-            if (plan.add_anchor(rr * n + col, col_mask | (1ULL << d3))) ++extra;
+            col_out = rr * n + col;
         }
-
-        int box_extra = 0;
-        for (int dr = 0; dr < topo.box_rows && box_extra < 2; ++dr) {
-            for (int dc = 0; dc < topo.box_cols && box_extra < 2; ++dc) {
+        for (int rr = 0; rr < n && col_out2 < 0; ++rr) {
+            const int idx = rr * n + col;
+            if (idx == col_out) continue;
+            if (rr >= r0 && rr < r0 + topo.box_rows) continue;
+            col_out2 = idx;
+        }
+        int box_only = -1;
+        int box_only2 = -1;
+        for (int dr = 0; dr < topo.box_rows && box_only < 0; ++dr) {
+            for (int dc = 0; dc < topo.box_cols && box_only < 0; ++dc) {
                 const int rr = r0 + dr;
                 const int cc = c0 + dc;
                 if (rr == row || cc == col) continue;
-                if (plan.add_anchor(rr * n + cc, box_mask)) ++box_extra;
+                box_only = rr * n + cc;
             }
         }
+        for (int dr = 0; dr < topo.box_rows && box_only2 < 0; ++dr) {
+            for (int dc = 0; dc < topo.box_cols && box_only2 < 0; ++dc) {
+                const int rr = r0 + dr;
+                const int cc = c0 + dc;
+                const int idx = rr * n + cc;
+                if (idx == box_only) continue;
+                if (rr == row || cc == col) continue;
+                box_only2 = idx;
+            }
+        }
+        if (row_box < 0 || col_box < 0 || row_out < 0 || col_out < 0 || box_only < 0) return false;
 
-        plan.valid = (plan.anchor_count >= 6);
+        const int inter = row * n + col;
+        plan.add_anchor(inter, inter_mask);
+        plan.add_anchor(row_box, row_box_mask);
+        plan.add_anchor(col_box, col_box_mask);
+        plan.add_anchor(row_out, row_out_mask);
+        plan.add_anchor(col_out, col_out_mask);
+        plan.add_anchor(box_only, box_only_mask);
+        if (row_out2 >= 0) plan.add_anchor(row_out2, row_support_mask);
+        if (col_out2 >= 0) plan.add_anchor(col_out2, col_support_mask);
+        if (box_only2 >= 0) plan.add_anchor(box_only2, box_support_mask);
+
+        plan.add_skeleton(inter, inter_mask);
+        plan.add_skeleton(row_box, row_box_mask);
+        plan.add_skeleton(col_box, col_box_mask);
+        plan.add_skeleton(row_out, row_out_mask);
+        plan.add_skeleton(col_out, col_out_mask);
+        plan.add_skeleton(box_only, box_only_mask);
+        if (row_out2 >= 0) plan.add_skeleton(row_out2, row_support_mask);
+        if (col_out2 >= 0) plan.add_skeleton(col_out2, col_support_mask);
+        if (box_only2 >= 0) plan.add_skeleton(box_only2, box_support_mask);
+        plan.explicit_skeleton = true;
+        plan.valid = (plan.anchor_count >= 6 && plan.skeleton_count >= 6);
         return plan.valid;
     }
 
@@ -440,6 +519,68 @@ public:
 
         plan.explicit_skeleton = true;
         plan.valid = (plan.anchor_count >= 5 && plan.skeleton_count >= 8);
+        return plan.valid;
+    }
+
+    static bool build_wxyz_wing(const GenericTopology& topo, std::mt19937_64& rng, ExactPatternTemplatePlan& plan) {
+        plan = {};
+        const int n = topo.n;
+        const int box_area = topo.box_rows * topo.box_cols;
+        if (n < 6 || topo.box_rows <= 1 || topo.box_cols <= 1 || box_area < 5) return false;
+
+        const int box_count = topo.box_rows_count * topo.box_cols_count;
+        const int box = static_cast<int>(rng() % static_cast<uint64_t>(box_count));
+        const int br = box / topo.box_cols_count;
+        const int bc = box % topo.box_cols_count;
+        const int r0 = br * topo.box_rows;
+        const int c0 = bc * topo.box_cols;
+        if (topo.box_rows < 2 || topo.box_cols < 2) return false;
+
+        const int rr0 = r0;
+        const int rr1 = r0 + 1;
+        const int cc0 = c0;
+        const int cc1 = c0 + 1;
+
+        const int d1 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+        const int d2 = random_digit_distinct(n, (1 << d1), rng);
+        const int d3 = random_digit_distinct(n, (1 << d1) | (1 << d2), rng);
+        const int d4 = random_digit_distinct(n, (1 << d1) | (1 << d2) | (1 << d3), rng);
+        const int dv = random_digit_distinct(
+            n, (1 << d1) | (1 << d2) | (1 << d3) | (1 << d4), rng);
+
+        const uint64_t a = (1ULL << d1);
+        const uint64_t b = (1ULL << d2);
+        const uint64_t c = (1ULL << d3);
+        const uint64_t z = (1ULL << d4);
+        const uint64_t v = (1ULL << dv);
+
+        const int a0 = rr0 * n + cc0;
+        const int a1 = rr0 * n + cc1;
+        const int a2 = rr1 * n + cc0;
+        const int a3 = rr1 * n + cc1;
+        plan.add_anchor(a0, a | b | z);
+        plan.add_anchor(a1, a | c | z);
+        plan.add_anchor(a2, b | c | z);
+        plan.add_anchor(a3, a | b | c);
+
+        int victim = -1;
+        for (int dr = 0; dr < topo.box_rows && victim < 0; ++dr) {
+            for (int dc = 0; dc < topo.box_cols && victim < 0; ++dc) {
+                const int idx = (r0 + dr) * n + (c0 + dc);
+                if (idx == a0 || idx == a1 || idx == a2 || idx == a3) continue;
+                victim = idx;
+            }
+        }
+        if (victim < 0) return false;
+
+        plan.add_anchor(victim, z | v);
+        plan.add_skeleton(a0, a | b | z);
+        plan.add_skeleton(a1, a | c | z);
+        plan.add_skeleton(a2, b | c | z);
+        plan.add_skeleton(a3, a | b | c);
+        plan.add_skeleton(victim, z | v);
+        plan.explicit_skeleton = true;
+        plan.valid = (plan.anchor_count >= 5 && plan.skeleton_count >= 5);
         return plan.valid;
     }
 

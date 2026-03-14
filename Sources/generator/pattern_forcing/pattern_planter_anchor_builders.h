@@ -26,6 +26,66 @@ inline bool build_chain_anchors(const GenericTopology& topo, PatternScratch& sc,
     return sc.anchor_count >= 4;
 }
 
+inline bool build_forcing_like_anchors(const GenericTopology& topo, PatternScratch& sc, std::mt19937_64& rng) {
+    if (topo.n < 4) return false;
+    const int n = topo.n;
+    int r1 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+    int r2 = r1;
+    int c1 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+    int c2 = c1;
+    for (int t = 0; t < 64 && r2 == r1; ++t) r2 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+    for (int t = 0; t < 64 && c2 == c1; ++t) c2 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+    if (r1 == r2 || c1 == c2) return false;
+
+    const int p = r1 * n + c1;
+    const int a = r1 * n + c2;
+    const int b = r2 * n + c2;
+    const int t = r2 * n + c1;
+    sc.add_anchor(p);
+    sc.add_anchor(a);
+    sc.add_anchor(b);
+    sc.add_anchor(t);
+
+    int row_support = -1;
+    for (int cc = 0; cc < n; ++cc) {
+        if (cc == c1 || cc == c2) continue;
+        row_support = r1 * n + cc;
+        break;
+    }
+    int col_support = -1;
+    for (int rr = 0; rr < n; ++rr) {
+        if (rr == r1 || rr == r2) continue;
+        col_support = rr * n + c2;
+        break;
+    }
+    if (row_support >= 0) sc.add_anchor(row_support);
+    if (col_support >= 0) sc.add_anchor(col_support);
+
+    int cross_support = -1;
+    for (int rr = 0; rr < n && cross_support < 0; ++rr) {
+        if (rr == r1 || rr == r2) continue;
+        for (int cc = 0; cc < n; ++cc) {
+            if (cc == c1 || cc == c2) continue;
+            const int idx = rr * n + cc;
+            const bool sees_a =
+                topo.cell_row[static_cast<size_t>(idx)] == topo.cell_row[static_cast<size_t>(a)] ||
+                topo.cell_col[static_cast<size_t>(idx)] == topo.cell_col[static_cast<size_t>(a)] ||
+                topo.cell_box[static_cast<size_t>(idx)] == topo.cell_box[static_cast<size_t>(a)];
+            const bool sees_b =
+                topo.cell_row[static_cast<size_t>(idx)] == topo.cell_row[static_cast<size_t>(b)] ||
+                topo.cell_col[static_cast<size_t>(idx)] == topo.cell_col[static_cast<size_t>(b)] ||
+                topo.cell_box[static_cast<size_t>(idx)] == topo.cell_box[static_cast<size_t>(b)];
+            if (sees_a || sees_b) {
+                cross_support = idx;
+                break;
+            }
+        }
+    }
+    if (cross_support >= 0) sc.add_anchor(cross_support);
+
+    return sc.anchor_count >= 6;
+}
+
 inline bool build_exocet_like_anchors(const GenericTopology& topo, PatternScratch& sc, std::mt19937_64& rng) {
     if (topo.box_rows <= 1 || topo.box_cols <= 1) return false;
     const int n = topo.n;
@@ -372,10 +432,39 @@ inline void apply_anchor_masks(const GenericTopology& topo, PatternScratch& sc, 
         return;
     }
     if (kind == PatternKind::ForcingLike) {
+        const uint64_t d1 = random_digit_mask(topo.n, 1, rng);
+        const uint64_t d2 = random_extra_digit(full, d1, rng);
+        const uint64_t d3 = random_extra_digit(full, d1 | d2, rng);
+        const uint64_t d4 = random_extra_digit(full, d1 | d2 | d3, rng);
+        const uint64_t d5 = random_extra_digit(full, d1 | d2 | d3 | d4, rng);
+
+        const uint64_t m12 = (d1 | d2) & full;
+        const uint64_t m23 = (d2 | d3) & full;
+        const uint64_t m13 = (d1 | d3) & full;
+        const uint64_t pivot_mask = (m12 | d4) & full;
+        const uint64_t branch_a_mask = (m23 | d4) & full;
+        const uint64_t branch_b_mask = (m13 | d5) & full;
+        const uint64_t target_mask = (m12 | d5) & full;
+        uint64_t row_support_mask = (m12 | d3 | d5) & full;
+        uint64_t col_support_mask = (m23 | d1 | d5) & full;
+        uint64_t cross_support_mask = (m13 | d2 | d4) & full;
+
+        if (large_geom) {
+            row_support_mask |= random_extra_digit(full, row_support_mask, rng);
+            col_support_mask |= random_extra_digit(full, col_support_mask, rng);
+            cross_support_mask |= random_extra_digit(full, cross_support_mask, rng);
+        }
+
         for (int i = 0; i < sc.anchor_count; ++i) {
-            uint64_t m = (i & 1) ? (mask_a | mask_b) : (mask_b | mask_c);
-            if (large_geom && (i % 3 == 0)) {
-                m |= random_extra_digit(full, m, rng);
+            uint64_t m = target_mask;
+            switch (i) {
+            case 0: m = pivot_mask; break;       // p
+            case 1: m = branch_a_mask; break;    // a
+            case 2: m = branch_b_mask; break;    // b
+            case 3: m = target_mask; break;      // t
+            case 4: m = row_support_mask; break;
+            case 5: m = col_support_mask; break;
+            default: m = cross_support_mask; break;
             }
             sc.allowed_masks[static_cast<size_t>(sc.anchors[static_cast<size_t>(i)])] = (m & full);
         }

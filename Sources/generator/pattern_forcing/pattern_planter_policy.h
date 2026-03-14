@@ -56,6 +56,7 @@ inline PatternStrategyPolicy pattern_strategy_policy(RequiredStrategy required, 
     case RequiredStrategy::ALSXZ:
     case RequiredStrategy::ALSChain:
     case RequiredStrategy::ALSAIC:
+    case RequiredStrategy::WXYZWing:
         return {PatternKind::AlsLike, PatternGeneratorPolicy::ExactPreferredFamilyFallback};
     case RequiredStrategy::AlignedPairExclusion:
     case RequiredStrategy::AlignedTripleExclusion:
@@ -130,6 +131,7 @@ inline bool pattern_exact_template_dispatch_wired(RequiredStrategy required, int
     case RequiredStrategy::ALSXZ:
     case RequiredStrategy::ALSChain:
     case RequiredStrategy::ALSAIC:
+    case RequiredStrategy::WXYZWing:
     case RequiredStrategy::AlignedPairExclusion:
     case RequiredStrategy::AlignedTripleExclusion:
     case RequiredStrategy::SueDeCoq:

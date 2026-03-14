@@ -47,57 +47,79 @@ public:
         int d5 = d4;
         for (int g = 0; g < 64 && (d5 == d1 || d5 == d2 || d5 == d3 || d5 == d4); ++g) d5 = static_cast<int>(rng() % static_cast<uint64_t>(n));
 
+        int d6 = d5;
+        for (int g = 0; g < 64 && (d6 == d1 || d6 == d2 || d6 == d3 || d6 == d4 || d6 == d5); ++g) {
+            d6 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+        }
+
         const uint64_t core = (1ULL << d1) | (1ULL << d2);
-        const uint64_t row_mask = core | (1ULL << d3);
-        const uint64_t col_mask = core | (1ULL << d3);
-        const uint64_t box_mask = core | (1ULL << d4);
         const uint64_t joint_mask = core | (1ULL << d3) | (1ULL << d4);
+        const uint64_t row_mask = core | (1ULL << d3) | (1ULL << d5);
+        const uint64_t col_mask = core | (1ULL << d4) | (1ULL << d6);
+        const uint64_t box_mask = core | (1ULL << d5) | (1ULL << d6);
 
+        const int joint = row * n + col;
+        if (!push_unique_anchor(plan, joint, joint_mask)) return false;
+
+        int row_box_peer = -1;
         for (int dc = 0; dc < topo.box_cols; ++dc) {
-            const int idx = row * n + (c0 + dc);
-            if (dc == col_pick) push_unique_anchor(plan, idx, joint_mask);
-            else plan.add_skeleton(idx, row_mask);
+            if (dc == col_pick) continue;
+            row_box_peer = row * n + (c0 + dc);
+            break;
         }
+        int col_box_peer = -1;
         for (int dr = 0; dr < topo.box_rows; ++dr) {
-            const int idx = (r0 + dr) * n + col;
-            if (dr == row_pick) push_unique_anchor(plan, idx, joint_mask);
-            else plan.add_skeleton(idx, col_mask);
+            if (dr == row_pick) continue;
+            col_box_peer = (r0 + dr) * n + col;
+            break;
         }
+        if (row_box_peer < 0 || col_box_peer < 0) return false;
+        if (!push_unique_anchor(plan, row_box_peer, row_mask)) return false;
+        if (!push_unique_anchor(plan, col_box_peer, col_mask)) return false;
 
-        int added = 0;
-        for (int cc = 0; cc < n && added < 2; ++cc) {
+        int row_outside = -1;
+        int row_support = -1;
+        for (int cc = 0; cc < n; ++cc) {
             if (cc >= c0 && cc < c0 + topo.box_cols) continue;
-            if (added == 0) {
-                if (push_unique_anchor(plan, row * n + cc, row_mask)) ++added;
-            } else if (plan.add_skeleton(row * n + cc, row_mask | (1ULL << d4))) {
-                ++added;
+            const int idx = row * n + cc;
+            if (row_outside < 0) row_outside = idx;
+            else {
+                row_support = idx;
+                break;
             }
         }
-        added = 0;
-        for (int rr = 0; rr < n && added < 2; ++rr) {
+        int col_outside = -1;
+        int col_support = -1;
+        for (int rr = 0; rr < n; ++rr) {
             if (rr >= r0 && rr < r0 + topo.box_rows) continue;
-            if (added == 0) {
-                if (push_unique_anchor(plan, rr * n + col, col_mask)) ++added;
-            } else if (plan.add_skeleton(rr * n + col, col_mask | (1ULL << d4))) {
-                ++added;
+            const int idx = rr * n + col;
+            if (col_outside < 0) col_outside = idx;
+            else {
+                col_support = idx;
+                break;
             }
         }
+        if (row_outside < 0 || col_outside < 0) return false;
+        if (!push_unique_anchor(plan, row_outside, row_mask)) return false;
+        if (!push_unique_anchor(plan, col_outside, col_mask)) return false;
 
-        int box_added = 0;
-        for (int dr = 0; dr < topo.box_rows && box_added < 2; ++dr) {
-            for (int dc = 0; dc < topo.box_cols && box_added < 2; ++dc) {
+        int box_only = -1;
+        for (int dr = 0; dr < topo.box_rows && box_only < 0; ++dr) {
+            for (int dc = 0; dc < topo.box_cols; ++dc) {
                 const int rr = r0 + dr;
                 const int cc = c0 + dc;
                 if (rr == row || cc == col) continue;
-                if (box_added == 0) {
-                    if (plan.add_skeleton(rr * n + cc, box_mask)) ++box_added;
-                } else if (plan.add_skeleton(rr * n + cc, box_mask | (1ULL << d5))) {
-                    ++box_added;
-                }
+                box_only = rr * n + cc;
+                break;
             }
         }
+        if (box_only < 0) return false;
 
-        plan.valid = (plan.anchor_count >= 3 && plan.skeleton_count >= 6);
+        if (!plan.add_skeleton(box_only, box_mask)) return false;
+        if (row_support >= 0) plan.add_skeleton(row_support, row_mask | (1ULL << d4));
+        if (col_support >= 0) plan.add_skeleton(col_support, col_mask | (1ULL << d3));
+
+        plan.valid = (plan.anchor_count >= 5 && plan.skeleton_count >= 6);
         return plan.valid;
     }
 
@@ -143,4 +165,3 @@ public:
 };
 
 } // namespace sudoku_hpc::pattern_forcing
-

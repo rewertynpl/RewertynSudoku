@@ -15,12 +15,19 @@ namespace sudoku_hpc::logic::p6_diabolical {
 
 inline int als_xz_max_size(const CandidateState& st) {
     const int n = st.topo->n;
+    if (n <= 16) return 6;
     if (n <= 25) return 5;
     return 4;
 }
 
+inline int als_xz_min_size(const CandidateState& st) {
+    const int n = st.topo->n;
+    return (n <= 25) ? 1 : 2;
+}
+
 inline int als_xz_pair_limit(const CandidateState& st, int als_cnt) {
     const int n = st.topo->n;
+    if (n <= 16) return std::min(als_cnt, 512);
     return std::min(als_cnt, std::clamp(128 + 6 * n, 160, 256));
 }
 
@@ -33,7 +40,7 @@ inline ApplyResult apply_als_xz(CandidateState& st, StrategyStats& s, GenericLog
     bool progress = false;
     auto& sp = shared::exact_pattern_scratchpad();
 
-    const int als_cnt = shared::build_als_list(st, 2, als_xz_max_size(st));
+    const int als_cnt = shared::build_als_list(st, als_xz_min_size(st), als_xz_max_size(st));
     if (als_cnt < 2) {
         s.elapsed_ns += st.now_ns() - t0;
         return ApplyResult::NoProgress;

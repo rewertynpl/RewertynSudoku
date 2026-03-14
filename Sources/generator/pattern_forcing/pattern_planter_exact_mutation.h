@@ -419,6 +419,7 @@ inline bool mutate_exact_template_for_family(
     case RequiredStrategy::SimpleColoring:
         return mutate_medusa_template_plan(topo, plan, rng, strength);
     case RequiredStrategy::ALSXYWing:
+    case RequiredStrategy::WXYZWing:
         return mutate_als_template_plan(topo, plan, rng, false, strength);
     case RequiredStrategy::ALSXZ:
         return mutate_als_xz_template_plan(topo, plan, rng, strength + 1);

@@ -139,13 +139,59 @@ inline PatternScratch& tls_pattern_scratch() {
     return s;
 }
 
+inline bool pattern_required_is_fragile_candidate_structure(RequiredStrategy required_strategy) {
+    switch (required_strategy) {
+    case RequiredStrategy::Jellyfish:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+    case RequiredStrategy::XChain:
+    case RequiredStrategy::XYChain:
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::UniqueLoop:
+    case RequiredStrategy::AvoidableRectangle:
+    case RequiredStrategy::BivalueOddagon:
+    case RequiredStrategy::UniqueRectangleExtended:
+    case RequiredStrategy::HiddenUniqueRectangle:
+    case RequiredStrategy::BUGType2:
+    case RequiredStrategy::BUGType3:
+    case RequiredStrategy::BUGType4:
+    case RequiredStrategy::BorescoperQiuDeadlyPattern:
+    case RequiredStrategy::Medusa3D:
+    case RequiredStrategy::AIC:
+    case RequiredStrategy::GroupedAIC:
+    case RequiredStrategy::GroupedXCycle:
+    case RequiredStrategy::ContinuousNiceLoop:
+    case RequiredStrategy::ALSXYWing:
+    case RequiredStrategy::ALSChain:
+    case RequiredStrategy::SueDeCoq:
+    case RequiredStrategy::DeathBlossom:
+    case RequiredStrategy::FrankenFish:
+    case RequiredStrategy::MutantFish:
+    case RequiredStrategy::KrakenFish:
+    case RequiredStrategy::Squirmbag:
+    case RequiredStrategy::AlignedPairExclusion:
+    case RequiredStrategy::AlignedTripleExclusion:
+    case RequiredStrategy::ALSAIC:
+    case RequiredStrategy::MSLS:
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::SKLoop:
+    case RequiredStrategy::PatternOverlayMethod:
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::DynamicForcingChains:
+    case RequiredStrategy::RemotePairs:
+    case RequiredStrategy::SimpleColoring:
+        return true;
+    default:
+        return false;
+    }
+}
+
 inline void protect_pattern_cells_from_masks(
     const GenericTopology& topo,
     PatternScratch& sc) {
-    const uint64_t full = pf_full_mask_for_n(topo.n);
     for (int idx = 0; idx < topo.nn; ++idx) {
-        const uint64_t mask = sc.allowed_masks[static_cast<size_t>(idx)];
-        if ((mask != 0ULL && mask != full) || sc.seed_puzzle[static_cast<size_t>(idx)] != 0U) {
+        if (sc.seed_puzzle[static_cast<size_t>(idx)] != 0U) {
             sc.protected_cells[static_cast<size_t>(idx)] = 1;
         }
     }
@@ -330,10 +376,15 @@ inline void protect_exact_template_skeleton(
     PatternScratch& sc,
     const ExactPatternTemplatePlan& plan,
     RequiredStrategy required_strategy) {
+    const bool is_fragile_pattern = pattern_required_is_fragile_candidate_structure(required_strategy);
+
     for (int i = 0; i < plan.skeleton_count; ++i) {
         const int idx = plan.skeleton_idx[static_cast<size_t>(i)];
         if (idx < 0 || idx >= sc.prepared_nn) continue;
-        if (required_strategy == RequiredStrategy::ALSXZ && plan.find_anchor(idx) >= 0) {
+        if (plan.find_anchor(idx) >= 0) {
+            continue;
+        }
+        if (is_fragile_pattern) {
             continue;
         }
         sc.protected_cells[static_cast<size_t>(idx)] = 1;

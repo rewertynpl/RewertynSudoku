@@ -770,22 +770,19 @@ private:
         if (max_level <= 5) return ApplyResult::NoProgress;
 
         // ====================================================================
-        // POZIOM 6: NIGHTMARE / DIABOLICAL (ĹaĹ„cuchy, Rozszerzone Deadly Patterns)
+        // POZIOM 6: NIGHTMARE / DIABOLICAL (Specyficzne Ryby, ALS, Deadly Patterns, Łańcuchy)
+        // Reguła architektoniczna: Named structures przed generycznymi chainami.
         // ====================================================================
         ar = p6_diabolical::apply_jellyfish(st, result.strategy_stats[SlotJellyfish], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotJellyfish, ar); return ar; }
-        ar = p6_diabolical::apply_x_chain(st, result.strategy_stats[SlotXChain], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotXChain, ar); return ar; }
-        ar = p6_diabolical::apply_xy_chain(st, result.strategy_stats[SlotXYChain], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotXYChain, ar); return ar; }
-        ar = p6_diabolical::apply_wxyz_wing(st, result.strategy_stats[SlotWXYZWing], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotWXYZWing, ar); return ar; }
+
         ar = p6_diabolical::apply_finned_swordfish_jellyfish(st, result.strategy_stats[SlotFinnedSwordfishJellyfish], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotFinnedSwordfishJellyfish, ar); return ar; }
+        ar = p6_diabolical::apply_wxyz_wing(st, result.strategy_stats[SlotWXYZWing], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotWXYZWing, ar); return ar; }
         ar = p6_diabolical::apply_als_xz(st, result.strategy_stats[SlotALSXZ], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotALSXZ, ar); return ar; }
-        
-        // NOWE PODPIÄCIA - UzupeĹ‚nione Deadly Patterns
+
         ar = p6_diabolical::apply_unique_loop(st, result.strategy_stats[SlotUniqueLoop], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotUniqueLoop, ar); return ar; }
         ar = p6_diabolical::apply_avoidable_rectangle(st, result.strategy_stats[SlotAvoidableRectangle], result);
@@ -805,52 +802,50 @@ private:
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotBUGType4, ar); return ar; }
         ar = p6_diabolical::apply_borescoper_qiu_deadly_pattern(st, result.strategy_stats[SlotBorescoperQiuDeadlyPattern], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotBorescoperQiuDeadlyPattern, ar); return ar; }
+
+        ar = p6_diabolical::apply_xy_chain(st, result.strategy_stats[SlotXYChain], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotXYChain, ar); return ar; }
+        ar = p6_diabolical::apply_x_chain(st, result.strategy_stats[SlotXChain], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotXChain, ar); return ar; }
         
         if (max_level <= 6) return ApplyResult::NoProgress;
 
         // ====================================================================
         // POZIOM 7: NIGHTMARE / THEORETICAL (Grupy ALS, Mutanty, APE)
+        // Reguła architektoniczna: named structures i ryby przed AIC / grouped AIC.
         // ====================================================================
-        ar = p7_nightmare::apply_medusa_3d(st, result.strategy_stats[SlotMedusa3D], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotMedusa3D, ar); return ar; }
-        ar = p7_nightmare::apply_aic(st, result.strategy_stats[SlotAIC], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotAIC, ar); return ar; }
-        ar = p7_nightmare::apply_grouped_aic(st, result.strategy_stats[SlotGroupedAIC], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotGroupedAIC, ar); return ar; }
-        
-        // PODPIÄCIA BRAKUJÄ„CYCH "SIEROT" P7
-        ar = p7_nightmare::apply_grouped_x_cycle(st, result.strategy_stats[SlotGroupedXCycle], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotGroupedXCycle, ar); return ar; }
-        ar = p7_nightmare::apply_continuous_nice_loop(st, result.strategy_stats[SlotContinuousNiceLoop], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotContinuousNiceLoop, ar); return ar; }
-        ar = p7_nightmare::apply_als_xy_wing(st, result.strategy_stats[SlotALSXYWing], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotALSXYWing, ar); return ar; }
-        ar = p7_nightmare::apply_als_chain(st, result.strategy_stats[SlotALSChain], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotALSChain, ar); return ar; }
-        
         ar = p7_nightmare::apply_sue_de_coq(st, result.strategy_stats[SlotSueDeCoq], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotSueDeCoq, ar); return ar; }
-        
-        // PODPIÄCIA BRAKUJÄ„CYCH "SIEROT" P7 cd.
-        ar = p7_nightmare::apply_death_blossom(st, result.strategy_stats[SlotDeathBlossom], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotDeathBlossom, ar); return ar; }
+        ar = p7_nightmare::apply_squirmbag(st, result.strategy_stats[SlotSquirmbag], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotSquirmbag, ar); return ar; }
         ar = p7_nightmare::apply_franken_fish(st, result.strategy_stats[SlotFrankenFish], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotFrankenFish, ar); return ar; }
         ar = p7_nightmare::apply_mutant_fish(st, result.strategy_stats[SlotMutantFish], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotMutantFish, ar); return ar; }
         ar = p7_nightmare::apply_kraken_fish(st, result.strategy_stats[SlotKrakenFish], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotKrakenFish, ar); return ar; }
-        
-        // NOWA RYBA
-        ar = p7_nightmare::apply_squirmbag(st, result.strategy_stats[SlotSquirmbag], result);
-        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotSquirmbag, ar); return ar; }
-        
+        ar = p7_nightmare::apply_als_xy_wing(st, result.strategy_stats[SlotALSXYWing], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotALSXYWing, ar); return ar; }
+        ar = p7_nightmare::apply_als_chain(st, result.strategy_stats[SlotALSChain], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotALSChain, ar); return ar; }
+        ar = p7_nightmare::apply_death_blossom(st, result.strategy_stats[SlotDeathBlossom], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotDeathBlossom, ar); return ar; }
         ar = p7_nightmare::apply_aligned_pair_exclusion(st, result.strategy_stats[SlotAlignedPairExclusion], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotAlignedPairExclusion, ar); return ar; }
         ar = p7_nightmare::apply_aligned_triple_exclusion(st, result.strategy_stats[SlotAlignedTripleExclusion], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotAlignedTripleExclusion, ar); return ar; }
-        
-        // PODPIÄCIE ALS-AIC
+
+        ar = p7_nightmare::apply_medusa_3d(st, result.strategy_stats[SlotMedusa3D], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotMedusa3D, ar); return ar; }
+        ar = p7_nightmare::apply_continuous_nice_loop(st, result.strategy_stats[SlotContinuousNiceLoop], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotContinuousNiceLoop, ar); return ar; }
+        ar = p7_nightmare::apply_grouped_x_cycle(st, result.strategy_stats[SlotGroupedXCycle], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotGroupedXCycle, ar); return ar; }
+
+        ar = p7_nightmare::apply_aic(st, result.strategy_stats[SlotAIC], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotAIC, ar); return ar; }
+        ar = p7_nightmare::apply_grouped_aic(st, result.strategy_stats[SlotGroupedAIC], result);
+        if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotGroupedAIC, ar); return ar; }
         ar = p7_nightmare::apply_als_aic(st, result.strategy_stats[SlotALSAIC], result);
         if (ar != ApplyResult::NoProgress) { note_strategy_slot(result, SlotALSAIC, ar); return ar; }
         

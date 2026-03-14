@@ -38,6 +38,11 @@ inline bool build_seed(
     if (mutation.strategy != required_strategy || mutation.kind != kind) {
         mutation.reset(required_strategy, kind);
     }
+    const bool force_family_fallback =
+        allows_family_fallback &&
+        (required_strategy == RequiredStrategy::ForcingChains ||
+         required_strategy == RequiredStrategy::DynamicForcingChains) &&
+        mutation.failure_streak >= 3;
 
     ExactPatternTemplatePlan exact_plan{};
     PatternKind exact_kind = PatternKind::None;
@@ -46,11 +51,11 @@ inline bool build_seed(
     int score_delta = 0;
     int selected_strength = 0;
     int adaptive_target_strength = 0;
-    const bool exact_matched = wants_exact_templates
+    const bool exact_matched = (!force_family_fallback && wants_exact_templates)
         ? try_exact_templates_for_level(topo, required_strategy, forcing_level, rng, exact_plan, exact_kind, &exact_score)
         : false;
 
-    if (wants_exact_templates &&
+    if (!force_family_fallback && wants_exact_templates &&
         mutation.have_last && mutation.strategy == required_strategy && mutation.kind == kind &&
         mutation.last_plan.valid && (mutation.failure_streak > 0 || mutation.zero_use_streak > 0)) {
         ExactPatternTemplatePlan mutated = mutation.last_plan;
@@ -69,7 +74,7 @@ inline bool build_seed(
             }
         }
     }
-    if (wants_exact_templates &&
+    if (!force_family_fallback && wants_exact_templates &&
         mutation.have_best && mutation.strategy == required_strategy && mutation.kind == kind &&
         mutation.best_plan.valid && mutation.zero_use_streak >= 2) {
         ExactPatternTemplatePlan mutated = mutation.best_plan;
@@ -231,6 +236,8 @@ inline bool build_seed(
             ok = build_remote_pairs_like_anchors(topo, sc, rng);
             break;
         case PatternKind::ForcingLike:
+            ok = build_forcing_like_anchors(topo, sc, rng);
+            break;
         case PatternKind::Chain:
             ok = build_chain_anchors(topo, sc, rng);
             break;

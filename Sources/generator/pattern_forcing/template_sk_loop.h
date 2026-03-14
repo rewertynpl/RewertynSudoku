@@ -25,6 +25,7 @@ public:
     // Dwie komórki stają się twardymi bivalue, a dwie dostają cyfry "wyjściowe" (exit digits).
     static bool build(const GenericTopology& topo, std::mt19937_64& rng, ExactPatternTemplatePlan& plan, bool dense_mode = false) {
         plan = {}; // Reset struktury
+        plan.explicit_skeleton = true;
 
         const int n = topo.n;
         // SK-Loop wymaga minimum siatki 4x4 (w praktyce sensowne dla N>=6)
@@ -65,38 +66,50 @@ public:
             d3 = static_cast<int>(rng() % static_cast<uint64_t>(n));
         }
 
+        int d4 = d3;
+        for (int g = 0; g < 64 && (d4 == d1 || d4 == d2 || d4 == d3); ++g) {
+            d4 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+        }
+
         const uint64_t core = (1ULL << d1) | (1ULL << d2);
 
         // Dodajemy cyfry wyjściowe dla dwóch wierzchołków by uniknąć natychmiastowego Unique Rectangle (Deadly Pattern)
         // Ograniczamy do modulo n, żeby nie przekroczyć rozmiaru maski
-        const uint64_t ex1 = core | (1ULL << static_cast<int>((d1 + 2) % n));
-        const uint64_t ex2 = core | (1ULL << static_cast<int>((d2 + 3) % n));
+        const uint64_t ex1 = core | (1ULL << d3);
+        const uint64_t ex2 = core | (1ULL << d4);
+        const uint64_t wing = core | (1ULL << d3) | (1ULL << d4);
 
         // Wstrzykujemy ograniczenia
         // B i C to twarde węzły bivalue. A i D to węzły wyjściowe pętli.
         plan.add_anchor(a, ex1 & full);
-        plan.add_anchor(b, core);
-        plan.add_anchor(c, core);
+        plan.add_anchor(b, core & full);
+        plan.add_anchor(c, core & full);
         plan.add_anchor(d, ex2 & full);
 
+        int added = 0;
+        for (int cc = 0; cc < n && added < 1; ++cc) {
+            if (cc == c1 || cc == c2) continue;
+            if (plan.add_skeleton(r1 * n + cc, wing & full)) ++added;
+        }
+        added = 0;
+        for (int rr = 0; rr < n && added < 1; ++rr) {
+            if (rr == r1 || rr == r2) continue;
+            if (plan.add_skeleton(rr * n + c2, wing & full)) ++added;
+        }
         if (dense_mode) {
-            const uint64_t wing = core | (1ULL << d3);
-            int added = 0;
-            for (int cc = 0; cc < n && added < 2; ++cc) {
+            added = 0;
+            for (int cc = 0; cc < n && added < 1; ++cc) {
                 if (cc == c1 || cc == c2) continue;
-                if (plan.add_anchor(r1 * n + cc, wing & full)) ++added;
+                if (plan.add_skeleton(r2 * n + cc, wing & full)) ++added;
             }
             added = 0;
-            for (int rr = 0; rr < n && added < 2; ++rr) {
+            for (int rr = 0; rr < n && added < 1; ++rr) {
                 if (rr == r1 || rr == r2) continue;
-                if (plan.add_anchor(rr * n + c2, wing & full)) ++added;
+                if (plan.add_skeleton(rr * n + c1, wing & full)) ++added;
             }
         }
 
-        plan.valid = (plan.anchor_count == 4);
-        if (dense_mode) {
-            plan.valid = (plan.anchor_count >= 6);
-        }
+        plan.valid = (plan.anchor_count == 4 && plan.skeleton_count >= (dense_mode ? 8 : 6));
         return plan.valid;
     }
 };

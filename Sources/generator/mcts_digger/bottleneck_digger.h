@@ -175,9 +175,15 @@ inline int select_seeded_anchor_release_action(
     return (best_core >= 0) ? best_core : best_any;
 }
 
-inline bool pre_evacuate_alsxz_core_anchors(
+inline bool mcts_required_needs_core_anchor_driving(RequiredStrategy rs);
+inline int mcts_required_core_anchor_count(RequiredStrategy rs, int pattern_anchor_count);
+inline int mcts_required_core_keep_floor(RequiredStrategy rs);
+inline int mcts_required_contract_max_filled_core_anchors(RequiredStrategy rs, bool near_target_window);
+
+inline bool pre_evacuate_required_core_anchors(
     std::span<uint16_t> out_puzzle,
     const GenericTopology& topo,
+    RequiredStrategy rs,
     int target_clues,
     const GenericUniquenessCounter& uniq,
     SearchAbortControl* budget,
@@ -190,19 +196,22 @@ inline bool pre_evacuate_alsxz_core_anchors(
     int& termination_reason,
     int* accepted_removals,
     int* rejected_uniqueness) {
-    if (pattern_anchor_idx == nullptr || pattern_anchor_count < 4) {
+    const int core_anchor_count = mcts_required_core_anchor_count(rs, pattern_anchor_count);
+    if (pattern_anchor_idx == nullptr || core_anchor_count < 2) {
         return true;
     }
 
-    const int core_anchor_count = std::min(pattern_anchor_count, 4);
-    const int release_budget = std::min(std::max(0, clues - target_clues), core_anchor_count - 1);
+    const int keep_floor = mcts_required_core_keep_floor(rs);
+    const int release_budget = std::min(
+        std::max(0, clues - target_clues),
+        std::max(0, core_anchor_count - keep_floor));
     for (int pass = 0; pass < release_budget; ++pass) {
         const int filled_core_anchors = mcts_count_filled_pattern_anchors(
             std::span<const uint16_t>(out_puzzle.data(), out_puzzle.size()),
             pattern_anchor_idx,
             0,
             core_anchor_count);
-        if (filled_core_anchors <= 1 || clues <= target_clues) {
+        if (filled_core_anchors <= keep_floor || clues <= target_clues) {
             break;
         }
 
@@ -315,6 +324,10 @@ inline bool mcts_required_is_intersection_family(RequiredStrategy rs) {
     return rs == RequiredStrategy::SueDeCoq;
 }
 
+inline bool mcts_required_is_exocet_family(RequiredStrategy rs) {
+    return rs == RequiredStrategy::Exocet || rs == RequiredStrategy::SeniorExocet;
+}
+
 inline bool mcts_required_is_fish_family(RequiredStrategy rs) {
     switch (rs) {
     case RequiredStrategy::KrakenFish:
@@ -333,6 +346,7 @@ inline bool mcts_required_is_als_family(RequiredStrategy rs) {
     case RequiredStrategy::ALSXZ:
     case RequiredStrategy::ALSChain:
     case RequiredStrategy::ALSAIC:
+    case RequiredStrategy::WXYZWing:
         return true;
     default:
         return false;
@@ -373,6 +387,11 @@ inline bool mcts_required_needs_strict_contract(RequiredStrategy rs) {
     case RequiredStrategy::RemotePairs:
     case RequiredStrategy::SimpleColoring:
     case RequiredStrategy::XChain:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::SueDeCoq:
+    case RequiredStrategy::DeathBlossom:
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
         return true;
     default:
         return false;
@@ -389,8 +408,86 @@ inline int mcts_required_min_uses_for_contract(RequiredStrategy rs) {
         return 3;
     case RequiredStrategy::SimpleColoring:
         return 2;
+    case RequiredStrategy::WXYZWing:
+        return 2;
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+        return 2;
     default:
         return 1;
+    }
+}
+
+inline bool mcts_required_needs_core_anchor_driving(RequiredStrategy rs) {
+    switch (rs) {
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::SueDeCoq:
+    case RequiredStrategy::DeathBlossom:
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::DynamicForcingChains:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline int mcts_required_core_anchor_count(RequiredStrategy rs, int pattern_anchor_count) {
+    switch (rs) {
+    case RequiredStrategy::SueDeCoq:
+        return std::min(pattern_anchor_count, 6);
+    case RequiredStrategy::Exocet:
+        return std::min(pattern_anchor_count, 4);
+    case RequiredStrategy::SeniorExocet:
+        return std::min(pattern_anchor_count, 4);
+    case RequiredStrategy::ForcingChains:
+        return std::min(pattern_anchor_count, 4);
+    case RequiredStrategy::DynamicForcingChains:
+        return std::min(pattern_anchor_count, 6);
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::DeathBlossom:
+        return std::min(pattern_anchor_count, 4);
+    default:
+        return 0;
+    }
+}
+
+inline int mcts_required_core_keep_floor(RequiredStrategy rs) {
+    switch (rs) {
+    case RequiredStrategy::SueDeCoq:
+        return 0;
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::DynamicForcingChains:
+        return 0;
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::DeathBlossom:
+        return (rs == RequiredStrategy::DeathBlossom) ? 0 : 1;
+    default:
+        return 0;
+    }
+}
+
+inline int mcts_required_contract_max_filled_core_anchors(RequiredStrategy rs, bool near_target_window) {
+    switch (rs) {
+    case RequiredStrategy::SueDeCoq:
+        return 0;
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::DynamicForcingChains:
+        return 0;
+    case RequiredStrategy::ALSXZ:
+    case RequiredStrategy::WXYZWing:
+    case RequiredStrategy::DeathBlossom:
+        return (rs == RequiredStrategy::DeathBlossom) ? 0 : (near_target_window ? 0 : 1);
+    default:
+        return 64;
     }
 }
 
@@ -401,6 +498,28 @@ inline bool mcts_required_prefers_hit_only_near_target(RequiredStrategy rs) {
         return true;
     default:
         return false;
+    }
+}
+
+inline int mcts_required_max_basic_steps_without_use(RequiredStrategy rs, int n) {
+    switch (rs) {
+    case RequiredStrategy::SueDeCoq:
+        return std::max(10, 2 * n);
+    case RequiredStrategy::DeathBlossom:
+        return std::max(12, 2 * n + 2);
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+        return std::max(14, 2 * n + 4);
+    case RequiredStrategy::ForcingChains:
+        return std::max(12, n + 4);
+    case RequiredStrategy::DynamicForcingChains:
+        return std::max(14, n + 6);
+    case RequiredStrategy::MSLS:
+    case RequiredStrategy::SKLoop:
+    case RequiredStrategy::PatternOverlayMethod:
+        return std::max(16, 2 * n + 6);
+    default:
+        return 1 << 20;
     }
 }
 
@@ -417,6 +536,11 @@ inline MctsRequiredRewardProfile mcts_required_reward_profile(RequiredStrategy r
         p.hit_mult = 1.15;
         p.use_bonus = 1.10;
         p.miss_penalty = 1.05;
+        break;
+    case RequiredStrategy::WXYZWing:
+        p.hit_mult = 1.20;
+        p.use_bonus = 1.10;
+        p.miss_penalty = 1.08;
         break;
     case RequiredStrategy::ALSXZ:
         p.hit_mult = 1.28;
@@ -446,6 +570,16 @@ inline MctsRequiredRewardProfile mcts_required_reward_profile(RequiredStrategy r
         p.use_bonus = 1.08;
         p.miss_penalty = 1.10;
         break;
+    case RequiredStrategy::Exocet:
+        p.hit_mult = 1.30;
+        p.use_bonus = 1.20;
+        p.miss_penalty = 1.10;
+        break;
+    case RequiredStrategy::SeniorExocet:
+        p.hit_mult = 1.34;
+        p.use_bonus = 1.24;
+        p.miss_penalty = 1.14;
+        break;
     case RequiredStrategy::MSLS:
         p.hit_mult = 1.22;
         p.use_bonus = 1.08;
@@ -458,11 +592,15 @@ inline MctsRequiredRewardProfile mcts_required_reward_profile(RequiredStrategy r
         break;
     case RequiredStrategy::Medusa3D:
     case RequiredStrategy::DeathBlossom:
-    case RequiredStrategy::SueDeCoq:
     case RequiredStrategy::KrakenFish:
         p.hit_mult = 1.10;
         p.use_bonus = 1.06;
         p.miss_penalty = 1.04;
+        break;
+    case RequiredStrategy::SueDeCoq:
+        p.hit_mult = 1.22;
+        p.use_bonus = 1.18;
+        p.miss_penalty = 1.12;
         break;
     case RequiredStrategy::SimpleColoring:
         p.hit_mult = 1.22;
@@ -501,6 +639,18 @@ inline double mcts_required_strategy_reward_bias(RequiredStrategy rs, double pri
     if (mcts_required_is_als_family(rs)) {
         bias += 0.18 * prior_bonus;
         if (!basic_solved) bias += 0.45;
+    } else if (mcts_required_is_exocet_family(rs)) {
+        bias += 0.22 * prior_bonus;
+        bias += basic_solved ? -0.40 : 0.55;
+    } else if (rs == RequiredStrategy::ForcingChains) {
+        bias += 0.20 * prior_bonus;
+        bias += basic_solved ? -0.30 : 0.44;
+    } else if (rs == RequiredStrategy::DynamicForcingChains) {
+        bias += 0.22 * prior_bonus;
+        bias += basic_solved ? -0.34 : 0.50;
+    } else if (mcts_required_is_intersection_family(rs)) {
+        bias += 0.18 * prior_bonus;
+        bias += basic_solved ? -0.35 : 0.48;
     } else if (mcts_required_is_aic_family(rs)) {
         bias += 0.16 * prior_bonus;
         if (!basic_solved) bias += 0.35;
@@ -514,7 +664,7 @@ inline double mcts_required_strategy_reward_bias(RequiredStrategy rs, double pri
         bias += 0.15 * prior_bonus;
         if (!basic_solved) bias += 0.28;
     } else if (mcts_required_is_color_family(rs) || mcts_required_is_petal_family(rs) ||
-               mcts_required_is_intersection_family(rs) || mcts_required_is_fish_family(rs)) {
+               mcts_required_is_fish_family(rs)) {
         bias += 0.12 * prior_bonus;
         if (!basic_solved) bias += 0.20;
     }
@@ -560,6 +710,42 @@ inline double mcts_required_structural_family_bonus(
         if (same_row > 0 && same_col > 0) bonus += 0.40;
         if (same_box > 0) bonus += 0.20;
         bonus += 0.08 * std::min(tight, 4);
+    } else if (rs == RequiredStrategy::ForcingChains || rs == RequiredStrategy::DynamicForcingChains) {
+        const int anchor_pos = mcts_pattern_anchor_position(pattern_anchor_idx, pattern_anchor_count, idx);
+        if (anchor_pos >= 0) {
+            if (anchor_pos == 0 || anchor_pos == 3) bonus += 0.82;
+            else if (anchor_pos == 1 || anchor_pos == 2) bonus += 0.62;
+            else bonus += 0.36;
+        }
+        if (same_row > 0) bonus += 0.20;
+        if (same_col > 0) bonus += 0.20;
+        if (same_box > 0) bonus += 0.12;
+        if (visible >= 2) bonus += 0.26;
+        bonus += 0.06 * std::min(tight, 5);
+        if (pattern_allowed_masks != nullptr) {
+            const uint64_t local_mask = pattern_allowed_masks[static_cast<size_t>(idx)];
+            const int bits = std::popcount(local_mask);
+            if (bits == 2) bonus += 0.28;
+            else if (bits == 3) bonus += 0.16;
+        }
+    } else if (mcts_required_is_exocet_family(rs)) {
+        const int anchor_pos = mcts_pattern_anchor_position(pattern_anchor_idx, pattern_anchor_count, idx);
+        if (anchor_pos >= 0) {
+            if (anchor_pos < 2) bonus += 1.35;
+            else if (anchor_pos < 4) bonus += 0.95;
+            else bonus += 0.40;
+        }
+        if (same_row > 0) bonus += 0.28;
+        if (same_col > 0) bonus += 0.28;
+        if (same_box > 0) bonus += 0.18;
+        if (visible >= 2) bonus += 0.24;
+        bonus += 0.05 * std::min(tight, 5);
+        if (pattern_allowed_masks != nullptr) {
+            const uint64_t local_mask = pattern_allowed_masks[static_cast<size_t>(idx)];
+            const int bits = std::popcount(local_mask);
+            if (bits == 2) bonus += 0.32;
+            else if (bits == 3) bonus += 0.18;
+        }
     } else if (mcts_required_is_als_family(rs)) {
         if (visible >= 2) bonus += 0.35;
         if (same_row > 0 && same_col > 0) bonus += 0.18;
@@ -606,6 +792,9 @@ inline double mcts_required_structural_family_bonus(
         if (same_row > 0 || same_col > 0 || same_box > 0) bonus += 0.30;
         if (visible >= 2) bonus += 0.25;
         bonus += 0.05 * std::min(pattern_anchor_count, 6);
+        const int anchor_pos = mcts_pattern_anchor_position(pattern_anchor_idx, pattern_anchor_count, idx);
+        if (anchor_pos == 0) bonus += 0.55;
+        else if (anchor_pos > 0 && anchor_pos < 4) bonus += 0.42;
     } else if (mcts_required_is_overlay_family(rs)) {
         if (same_row > 0) bonus += 0.18;
         if (same_col > 0) bonus += 0.18;
@@ -623,7 +812,14 @@ inline double mcts_required_structural_family_bonus(
     } else if (mcts_required_is_intersection_family(rs)) {
         if (same_box > 0 && (same_row > 0 || same_col > 0)) bonus += 0.55;
         else if (same_box > 0) bonus += 0.20;
+        if (same_box >= 3) bonus += 0.16;
+        if (same_row >= 2 || same_col >= 2) bonus += 0.18;
+        bonus += 0.05 * std::min(tight, 4);
         bonus += 0.06 * std::min(visible, 5);
+        const int anchor_pos = mcts_pattern_anchor_position(pattern_anchor_idx, pattern_anchor_count, idx);
+        if (anchor_pos == 0) bonus += 0.70;
+        else if (anchor_pos == 3 || anchor_pos == 4) bonus += 0.48;
+        else if (anchor_pos > 0) bonus += 0.34;
     } else if (mcts_required_is_fish_family(rs)) {
         if (same_row >= 2 || same_col >= 2) bonus += 0.45;
         if (same_box > 0) bonus += 0.10;
@@ -679,6 +875,11 @@ inline double mcts_large_geometry_required_bonus(
         else if (row_edge || col_edge) bonus += 0.50;
         if (inner_box) bonus += 0.25;
         bonus += center_bonus;
+    } else if (mcts_required_is_exocet_family(rs)) {
+        if (corner) bonus += 0.18;
+        else if (row_edge || col_edge) bonus += 0.24;
+        if (inner_box) bonus += 0.48;
+        bonus += 1.55 * center_bonus;
     } else if (mcts_required_is_loop_family(rs)) {
         if (corner) bonus += 0.55;
         else if (row_edge || col_edge) bonus += 0.30;
@@ -883,19 +1084,20 @@ public:
         const MctsRequiredRewardProfile required_reward_profile = mcts_required_reward_profile(cfg.required_strategy);
         const bool seeded_high_clue_push =
             exact_pattern &&
-            (wants_p8 || cfg.required_strategy == RequiredStrategy::ALSXZ) &&
+            (wants_p8 || mcts_required_needs_core_anchor_driving(cfg.required_strategy)) &&
             has_required_slot &&
             (cfg.required_strategy != RequiredStrategy::None);
         const int fail_cap = std::max(16, cfg.mcts_fail_cap);
-        if (cfg.required_strategy == RequiredStrategy::ALSXZ &&
+        if (mcts_required_needs_core_anchor_driving(cfg.required_strategy) &&
             exact_pattern &&
             pattern_anchor_idx != nullptr &&
-            pattern_anchor_count >= 4) {
+            mcts_required_core_anchor_count(cfg.required_strategy, pattern_anchor_count) >= 2) {
             int* accepted_ptr = (stats != nullptr) ? &stats->accepted_removals : nullptr;
             int* rejected_uniqueness_ptr = (stats != nullptr) ? &stats->rejected_uniqueness : nullptr;
-            if (!pre_evacuate_alsxz_core_anchors(
+            if (!pre_evacuate_required_core_anchors(
                     std::span<uint16_t>(out_puzzle.data(), out_puzzle.size()),
                     topo,
+                    cfg.required_strategy,
                     target_clues,
                     uniq,
                     budget,
@@ -931,29 +1133,29 @@ public:
 
             // Faza 1: Wybór akcji wg. UCB1
             int idx = -1;
+            const int required_core_anchor_count =
+                mcts_required_core_anchor_count(cfg.required_strategy, pattern_anchor_count);
             const int filled_core_anchors_pre =
-                (cfg.required_strategy == RequiredStrategy::ALSXZ)
+                (required_core_anchor_count > 0)
                     ? mcts_count_filled_pattern_anchors(
                           std::span<const uint16_t>(out_puzzle.data(), out_puzzle.size()),
                           pattern_anchor_idx,
                           0,
-                          std::min(pattern_anchor_count, 4))
+                          required_core_anchor_count)
                     : 0;
-            const bool alsxz_anchor_release_needed =
-                (cfg.required_strategy == RequiredStrategy::ALSXZ) &&
+            const bool required_anchor_release_needed =
+                mcts_required_needs_core_anchor_driving(cfg.required_strategy) &&
                 exact_pattern &&
-                (filled_core_anchors_pre > 1);
-            if (seeded_high_clue_push && (clues > max_clues || alsxz_anchor_release_needed)) {
-                if (cfg.required_strategy == RequiredStrategy::ALSXZ) {
-                    idx = select_seeded_anchor_release_action(
-                        sc,
-                        std::span<const uint16_t>(out_puzzle.data(), out_puzzle.size()),
-                        pattern_anchor_idx,
-                        pattern_anchor_count,
-                        rng);
-                }
+                (filled_core_anchors_pre > mcts_required_core_keep_floor(cfg.required_strategy));
+            if (seeded_high_clue_push && (clues > max_clues || required_anchor_release_needed)) {
+                idx = select_seeded_anchor_release_action(
+                    sc,
+                    std::span<const uint16_t>(out_puzzle.data(), out_puzzle.size()),
+                    pattern_anchor_idx,
+                    pattern_anchor_count,
+                    rng);
             }
-            if (idx < 0 && seeded_high_clue_push && clues > max_clues && !alsxz_anchor_release_needed) {
+            if (idx < 0 && seeded_high_clue_push && clues > max_clues && !required_anchor_release_needed) {
                 const double excess_ratio =
                     static_cast<double>(clues - max_clues) /
                     static_cast<double>(std::max(1, topo.nn - max_clues));
@@ -1116,6 +1318,8 @@ public:
                 const int strict_required_min_uses = mcts_required_min_uses_for_contract(cfg.required_strategy);
                 const bool prefer_hit_only_near_target = mcts_required_prefers_hit_only_near_target(cfg.required_strategy);
                 const bool near_target_window = ((clues - removal) <= (target_clues + tuning.near_window));
+                const int max_basic_steps_without_use =
+                    mcts_required_max_basic_steps_without_use(cfg.required_strategy, topo.n);
                 if (required_hits == 0 && required_uses >= strict_required_min_uses) {
                     reward += tuning.required_use_weight * required_reward_profile.use_bonus;
                 } else if (required_hits == 0 && required_uses > 0 && mcts_required_needs_strict_contract(cfg.required_strategy)) {
@@ -1128,6 +1332,12 @@ public:
                     reward -= (large_required_geometry ? 0.25 : 0.75) *
                               tuning.required_use_weight *
                               required_reward_profile.miss_penalty;
+                }
+                if (has_required_slot &&
+                    required_hits == 0 &&
+                    required_uses == 0 &&
+                    basic.steps > max_basic_steps_without_use) {
+                    reward -= 0.90 * tuning.required_use_weight * required_reward_profile.miss_penalty;
                 }
                 reward += mcts_required_strategy_reward_bias(
                     cfg.required_strategy,
@@ -1152,27 +1362,30 @@ public:
 
                 const bool strict_required_contract = mcts_required_needs_strict_contract(cfg.required_strategy);
                 const int filled_core_anchors =
-                    (cfg.required_strategy == RequiredStrategy::ALSXZ)
+                    (required_core_anchor_count > 0)
                         ? mcts_count_filled_pattern_anchors(
                               std::span<const uint16_t>(out_puzzle.data(), out_puzzle.size()),
                               pattern_anchor_idx,
                               0,
-                              std::min(pattern_anchor_count, 4))
+                              required_core_anchor_count)
                         : 0;
                 const bool contract_reject =
                     has_required_slot &&
                     required_hits == 0 &&
                     (((required_uses == 0) && (basic_solved || (!advanced_signal && !large_required_geometry))) ||
                      ((required_uses == 0) && near_target_window) ||
-                     ((cfg.required_strategy == RequiredStrategy::ALSXZ) &&
-                      ((filled_core_anchors > 1) ||
-                       ((filled_core_anchors > 0) && near_target_window))) ||
+                     (mcts_required_needs_core_anchor_driving(cfg.required_strategy) &&
+                      (filled_core_anchors >
+                       mcts_required_contract_max_filled_core_anchors(
+                           cfg.required_strategy, near_target_window))) ||
                      (strict_required_contract &&
                       near_target_window &&
                       (required_uses < strict_required_min_uses)) ||
                      (strict_required_contract &&
                       basic_solved &&
                       (required_uses < (strict_required_min_uses + 1))) ||
+                     ((required_uses == 0) &&
+                      (basic.steps > max_basic_steps_without_use)) ||
                      (prefer_hit_only_near_target &&
                       near_target_window &&
                       (required_uses > 0)) ||

@@ -18,13 +18,31 @@ inline bool try_exact_templates_for_level(
     exact_plan = {};
     out_kind = PatternKind::None;
     int best_score = -1;
+    int best_family_score = -1;
+    PatternKind best_any_kind = PatternKind::None;
+    PatternKind best_family_kind = PatternKind::None;
+    ExactPatternTemplatePlan best_any_plan{};
+    ExactPatternTemplatePlan best_family_plan{};
+    const PatternStrategyPolicy preferred_policy = pattern_strategy_policy(required_strategy, forcing_level);
+    const PatternKind preferred_kind = preferred_policy.kind;
 
     auto consider = [&](PatternKind candidate_kind, const ExactPatternTemplatePlan& candidate_plan) {
         const int score = score_exact_plan(topo, required_strategy, candidate_kind, candidate_plan);
         if (score > best_score) {
             best_score = score;
-            exact_plan = candidate_plan;
-            out_kind = candidate_kind;
+            best_any_plan = candidate_plan;
+            best_any_kind = candidate_kind;
+        }
+        if (candidate_kind == preferred_kind && score > best_family_score) {
+            best_family_score = score;
+            best_family_plan = candidate_plan;
+            best_family_kind = candidate_kind;
+        }
+    };
+
+    auto repeat_attempts = [&](int tries, auto&& builder) {
+        for (int attempt = 0; attempt < tries; ++attempt) {
+            builder();
         }
     };
 
@@ -112,6 +130,12 @@ inline bool try_exact_templates_for_level(
             consider(PatternKind::AlsLike, candidate);
         }
     };
+    auto try_wxyz = [&]() {
+        ExactPatternTemplatePlan candidate{};
+        if (TemplateP6Exact::build_wxyz_wing(topo, rng, candidate)) {
+            consider(PatternKind::AlsLike, candidate);
+        }
+    };
     auto try_als_chain = [&](bool aic_mode) {
         ExactPatternTemplatePlan candidate{};
         if (TemplateP6Exact::build_als_chain(topo, rng, candidate, aic_mode)) {
@@ -184,19 +208,21 @@ inline bool try_exact_templates_for_level(
 
     switch (required_strategy) {
         case RequiredStrategy::Exocet:
-            try_exocet(false);
+            repeat_attempts(12, [&]() { try_exocet(false); });
             break;
         case RequiredStrategy::SeniorExocet:
-            try_exocet(true);
+            repeat_attempts(12, [&]() { try_exocet(true); });
             break;
         case RequiredStrategy::SKLoop:
-            try_sk(true);
+            repeat_attempts(8, [&]() { try_sk(false); });
+            repeat_attempts(6, [&]() { try_sk(true); });
+            repeat_attempts(6, [&]() { try_overlay(); });
             break;
         case RequiredStrategy::MSLS:
-            try_msls();
+            repeat_attempts(12, [&]() { try_msls(); });
             break;
         case RequiredStrategy::PatternOverlayMethod:
-            try_overlay();
+            repeat_attempts(8, [&]() { try_overlay(); });
             break;
         case RequiredStrategy::Medusa3D:
             try_medusa();
@@ -225,6 +251,9 @@ inline bool try_exact_templates_for_level(
         case RequiredStrategy::ALSXZ:
             try_als_xz();
             break;
+        case RequiredStrategy::WXYZWing:
+            try_wxyz();
+            break;
         case RequiredStrategy::ALSChain:
             try_als_chain(false);
             break;
@@ -238,10 +267,10 @@ inline bool try_exact_templates_for_level(
             try_exclusion(true);
             break;
         case RequiredStrategy::ForcingChains:
-            try_forcing(false);
+            repeat_attempts(8, [&]() { try_forcing(false); });
             break;
         case RequiredStrategy::DynamicForcingChains:
-            try_forcing(true);
+            repeat_attempts(8, [&]() { try_forcing(true); });
             break;
         case RequiredStrategy::AIC:
             try_aic();
@@ -308,6 +337,7 @@ inline bool try_exact_templates_for_level(
         try_suedecoq();
         try_als_xy();
         try_als_xz();
+        try_wxyz();
         try_als_chain(true);
         try_exclusion(true);
         try_grouped_xcycle();
@@ -335,6 +365,7 @@ inline bool try_exact_templates_for_level(
         try_squirm();
         try_als_xy();
         try_als_xz();
+        try_wxyz();
         try_als_chain(false);
         try_exclusion(false);
         try_grouped_xcycle();
@@ -351,6 +382,15 @@ inline bool try_exact_templates_for_level(
         try_medusa();
         try_forcing(false);
         try_exocet(false);
+    }
+
+    if (best_family_score >= 0) {
+        exact_plan = best_family_plan;
+        out_kind = best_family_kind;
+        best_score = best_family_score;
+    } else {
+        exact_plan = best_any_plan;
+        out_kind = best_any_kind;
     }
 
     if (out_score != nullptr) *out_score = best_score;

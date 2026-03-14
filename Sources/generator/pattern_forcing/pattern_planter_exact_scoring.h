@@ -533,6 +533,34 @@ inline int score_als_xz_exact_plan(
     return score;
 }
 
+inline int score_wxyz_exact_plan(
+    const GenericTopology& topo,
+    const ExactPatternTemplatePlan& plan) {
+    int score = score_als_exact_plan(topo, plan, false) + 8;
+    if (score < 0) return score;
+
+    int box_cluster = 0;
+    int witness_score = 0;
+    int tri_score = 0;
+    for (int i = 0; i < plan.anchor_count; ++i) {
+        const int ai = plan.anchor_idx[static_cast<size_t>(i)];
+        const int bits = std::popcount(plan.anchor_masks[static_cast<size_t>(i)]);
+        if (bits == 3) tri_score += 3;
+        if (bits == 2) witness_score += 6;
+        for (int j = i + 1; j < plan.anchor_count; ++j) {
+            const int aj = plan.anchor_idx[static_cast<size_t>(j)];
+            if (topo.cell_box[static_cast<size_t>(ai)] == topo.cell_box[static_cast<size_t>(aj)]) {
+                box_cluster += 3;
+            }
+        }
+    }
+
+    score += std::min(box_cluster, 30);
+    score += std::min(witness_score, 12);
+    score += std::min(tri_score, 12);
+    return score;
+}
+
 inline int score_exclusion_exact_plan(
     const GenericTopology& topo,
     const ExactPatternTemplatePlan& plan,
@@ -610,16 +638,60 @@ inline bool exact_kind_matches_required_strategy(
     RequiredStrategy required_strategy,
     PatternKind kind) {
     switch (required_strategy) {
+    case RequiredStrategy::Exocet:
+    case RequiredStrategy::SeniorExocet:
+        return kind == PatternKind::ExocetLike;
     case RequiredStrategy::ALSXYWing:
     case RequiredStrategy::ALSXZ:
     case RequiredStrategy::ALSChain:
     case RequiredStrategy::ALSAIC:
+    case RequiredStrategy::WXYZWing:
         return kind == PatternKind::AlsLike;
+    case RequiredStrategy::Medusa3D:
+    case RequiredStrategy::SimpleColoring:
+        return kind == PatternKind::ColorLike;
+    case RequiredStrategy::DeathBlossom:
+        return kind == PatternKind::PetalLike;
+    case RequiredStrategy::SueDeCoq:
+        return kind == PatternKind::IntersectionLike;
+    case RequiredStrategy::KrakenFish:
+        return kind == PatternKind::FishLike;
+    case RequiredStrategy::FrankenFish:
+        return kind == PatternKind::FrankenLike;
+    case RequiredStrategy::MutantFish:
+        return kind == PatternKind::MutantLike;
+    case RequiredStrategy::Squirmbag:
+        return kind == PatternKind::SquirmLike;
+    case RequiredStrategy::AIC:
+        return kind == PatternKind::AicLike;
+    case RequiredStrategy::GroupedAIC:
+        return kind == PatternKind::GroupedAicLike;
+    case RequiredStrategy::GroupedXCycle:
+        return kind == PatternKind::GroupedCycleLike;
+    case RequiredStrategy::ContinuousNiceLoop:
+        return kind == PatternKind::NiceLoopLike;
+    case RequiredStrategy::XChain:
+    case RequiredStrategy::Skyscraper:
+    case RequiredStrategy::TwoStringKite:
+        return kind == PatternKind::XChainLike;
+    case RequiredStrategy::XYChain:
+        return kind == PatternKind::XYChainLike;
     case RequiredStrategy::MSLS:
     case RequiredStrategy::PatternOverlayMethod:
         return kind == PatternKind::LoopLike;
-    case RequiredStrategy::SeniorExocet:
-        return kind == PatternKind::ExocetLike;
+    case RequiredStrategy::ForcingChains:
+    case RequiredStrategy::DynamicForcingChains:
+        return kind == PatternKind::ForcingLike;
+    case RequiredStrategy::Swordfish:
+    case RequiredStrategy::XWing:
+        return kind == PatternKind::SwordfishLike;
+    case RequiredStrategy::Jellyfish:
+        return kind == PatternKind::JellyfishLike;
+    case RequiredStrategy::FinnedXWingSashimi:
+    case RequiredStrategy::FinnedSwordfishJellyfish:
+        return kind == PatternKind::FinnedFishLike;
+    case RequiredStrategy::EmptyRectangle:
+        return kind == PatternKind::EmptyRectangleLike;
     case RequiredStrategy::RemotePairs:
         return kind == PatternKind::RemotePairsLike;
     default:
@@ -670,6 +742,8 @@ inline int score_exact_plan(
         return score_als_exact_plan(topo, plan, false);
     case RequiredStrategy::ALSXZ:
         return score_als_xz_exact_plan(topo, plan);
+    case RequiredStrategy::WXYZWing:
+        return score_wxyz_exact_plan(topo, plan);
     case RequiredStrategy::ALSChain:
         return score_als_exact_plan(topo, plan, false) + 4;
     case RequiredStrategy::ALSAIC:

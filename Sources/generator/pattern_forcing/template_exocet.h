@@ -162,12 +162,16 @@ public:
         for (int g = 0; g < 64 && (d4 == d1 || d4 == d2 || d4 == d3); ++g) {
             d4 = static_cast<int>(rng() % static_cast<uint64_t>(n));
         }
+        int d5 = d4;
+        for (int g = 0; g < 64 && (d5 == d1 || d5 == d2 || d5 == d3 || d5 == d4); ++g) {
+            d5 = static_cast<int>(rng() % static_cast<uint64_t>(n));
+        }
 
         // Maska komĂłrek bazowych i docelowych (w docelowych dorzucamy "szum" by wzbudziÄ‡ Exocet, a nie prostego Naked Pair)
         const uint64_t base_mask = (1ULL << d1) | (1ULL << d2);
-        const uint64_t cross_mask = base_mask | (1ULL << d3);
-        const uint64_t row_gate_mask = base_mask | (1ULL << d4);
-        const uint64_t col_gate_mask = base_mask | (1ULL << d3) | (senior_mode ? (1ULL << d4) : 0ULL);
+        const uint64_t cross_mask = base_mask | (1ULL << d3) | (1ULL << d4);
+        const uint64_t row_gate_mask = base_mask | (1ULL << d4) | (1ULL << d5);
+        const uint64_t col_gate_mask = base_mask | (1ULL << d3) | (1ULL << d5);
 
         // Wstrzykiwanie masek w plan:
         // dla SeniorExocet trzymamy twardo tylko bazÄ™, a cele i wsparcia jako miÄ™kki skeleton.
@@ -175,10 +179,10 @@ public:
         plan.add_anchor(b2, base_mask);
 
         if (senior_mode) {
-            const uint64_t soft_target_mask = (base_mask | (1ULL << d3)) & full;
-            const uint64_t soft_gate_mask = (base_mask | (1ULL << d4)) & full;
-            plan.add_skeleton(t1, soft_target_mask);
-            plan.add_skeleton(t2, soft_target_mask);
+            const uint64_t soft_target_mask = (base_mask | (1ULL << d3) | (1ULL << d4)) & full;
+            const uint64_t soft_gate_mask = (base_mask | (1ULL << d4) | (1ULL << d5)) & full;
+            plan.add_anchor(t1, soft_target_mask);
+            plan.add_anchor(t2, soft_target_mask);
 
             for (int cc = 0; cc < n; ++cc) {
                 if (cc == c1 || cc == c2) continue;

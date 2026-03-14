@@ -81,7 +81,7 @@ inline bool idx_equals_any_selected(int idx, const int* pool, int i1, int i2, in
 
 inline int sue_de_coq_selection_cap(const CandidateState& st) {
     const int box_area = st.topo->box_rows * st.topo->box_cols;
-    if (st.topo->n <= 16 || box_area <= 12) return 4;
+    if (st.topo->n <= 16 || box_area <= 12) return 5;
     return 3;
 }
 
@@ -144,23 +144,28 @@ inline ApplyResult scan_row_box_intersections(CandidateState& st, bool& progress
                         for_each_combo_up_to4(b_pool_cnt, b_choose, [&](int bi1, int bi2, int bi3, int bi4) {
                             if (contradiction) return;
                             const uint64_t mb = pool_mask_from_selection(st, b_pool, bi1, bi2, bi3, bi4);
-                            if ((mb & ~ma) != 0ULL) return;
+                            const uint64_t row_union = ma | mb;
+                            if (std::popcount(row_union) != (a_cnt + b_choose)) return;
 
                             for_each_combo_up_to4(c_pool_cnt, c_choose, [&](int ci1, int ci2, int ci3, int ci4) {
                                 if (contradiction) return;
                                 const uint64_t mc = pool_mask_from_selection(st, c_pool, ci1, ci2, ci3, ci4);
-                                if ((mc & ~ma) != 0ULL) return;
+                                const uint64_t box_union = ma | mc;
+                                if (std::popcount(box_union) != (a_cnt + c_choose)) return;
 
-                                const uint64_t union_mask = ma | mb | mc;
+                                const uint64_t union_mask = row_union | mc;
                                 if (std::popcount(union_mask) != target_cands) return;
+                                const uint64_t row_only = row_union & ~box_union;
+                                const uint64_t box_only = box_union & ~row_union;
+                                if (row_only == 0ULL || box_only == 0ULL) return;
 
-                                if (mb != 0ULL) {
+                                if (row_union != 0ULL) {
                                     for (int c = 0; c < n; ++c) {
                                         if (c >= c0 && c < c0 + st.topo->box_cols) continue;
                                         const int idx = intersect_row * n + c;
                                         if (st.board->values[idx] != 0) continue;
                                         if (idx_equals_any_selected(idx, b_pool, bi1, bi2, bi3, bi4)) continue;
-                                        const ApplyResult er = st.eliminate(idx, mb);
+                                        const ApplyResult er = st.eliminate(idx, row_union);
                                         if (er == ApplyResult::Contradiction) {
                                             contradiction = true;
                                             return;
@@ -169,14 +174,14 @@ inline ApplyResult scan_row_box_intersections(CandidateState& st, bool& progress
                                     }
                                 }
 
-                                if (mc != 0ULL) {
+                                if (box_union != 0ULL) {
                                     for (int b_dr = 0; b_dr < st.topo->box_rows; ++b_dr) {
                                             if (b_dr == dr) continue;
                                             for (int b_dc = 0; b_dc < st.topo->box_cols; ++b_dc) {
                                                 const int idx = (r0 + b_dr) * n + (c0 + b_dc);
                                                 if (st.board->values[idx] != 0) continue;
                                                 if (idx_equals_any_selected(idx, c_pool, ci1, ci2, ci3, ci4)) continue;
-                                                const ApplyResult er = st.eliminate(idx, mc);
+                                                const ApplyResult er = st.eliminate(idx, box_union);
                                             if (er == ApplyResult::Contradiction) {
                                                 contradiction = true;
                                                 return;
@@ -256,23 +261,28 @@ inline ApplyResult scan_col_box_intersections(CandidateState& st, bool& progress
                         for_each_combo_up_to4(b_pool_cnt, b_choose, [&](int bi1, int bi2, int bi3, int bi4) {
                             if (contradiction) return;
                             const uint64_t mb = pool_mask_from_selection(st, b_pool, bi1, bi2, bi3, bi4);
-                            if ((mb & ~ma) != 0ULL) return;
+                            const uint64_t col_union = ma | mb;
+                            if (std::popcount(col_union) != (a_cnt + b_choose)) return;
 
                             for_each_combo_up_to4(c_pool_cnt, c_choose, [&](int ci1, int ci2, int ci3, int ci4) {
                                 if (contradiction) return;
                                 const uint64_t mc = pool_mask_from_selection(st, c_pool, ci1, ci2, ci3, ci4);
-                                if ((mc & ~ma) != 0ULL) return;
+                                const uint64_t box_union = ma | mc;
+                                if (std::popcount(box_union) != (a_cnt + c_choose)) return;
 
-                                const uint64_t union_mask = ma | mb | mc;
+                                const uint64_t union_mask = col_union | mc;
                                 if (std::popcount(union_mask) != target_cands) return;
+                                const uint64_t col_only = col_union & ~box_union;
+                                const uint64_t box_only = box_union & ~col_union;
+                                if (col_only == 0ULL || box_only == 0ULL) return;
 
-                                if (mb != 0ULL) {
+                                if (col_union != 0ULL) {
                                     for (int r = 0; r < n; ++r) {
                                         if (r >= r0 && r < r0 + st.topo->box_rows) continue;
                                         const int idx = r * n + intersect_col;
                                         if (st.board->values[idx] != 0) continue;
                                         if (idx_equals_any_selected(idx, b_pool, bi1, bi2, bi3, bi4)) continue;
-                                        const ApplyResult er = st.eliminate(idx, mb);
+                                        const ApplyResult er = st.eliminate(idx, col_union);
                                         if (er == ApplyResult::Contradiction) {
                                             contradiction = true;
                                             return;
@@ -281,14 +291,14 @@ inline ApplyResult scan_col_box_intersections(CandidateState& st, bool& progress
                                     }
                                 }
 
-                                if (mc != 0ULL) {
+                                if (box_union != 0ULL) {
                                     for (int b_dr = 0; b_dr < st.topo->box_rows; ++b_dr) {
                                         for (int b_dc = 0; b_dc < st.topo->box_cols; ++b_dc) {
                                             if (b_dc == dc) continue;
                                             const int idx = (r0 + b_dr) * n + (c0 + b_dc);
                                             if (st.board->values[idx] != 0) continue;
                                             if (idx_equals_any_selected(idx, c_pool, ci1, ci2, ci3, ci4)) continue;
-                                            const ApplyResult er = st.eliminate(idx, mc);
+                                            const ApplyResult er = st.eliminate(idx, box_union);
                                             if (er == ApplyResult::Contradiction) {
                                                 contradiction = true;
                                                 return;

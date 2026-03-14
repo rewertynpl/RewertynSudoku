@@ -608,6 +608,93 @@ inline uint64_t suggest_attempt_node_budget(int box_rows, int box_cols, int effe
     return std::clamp<uint64_t>(n * n * (200 + 60 * lvl), 50'000ULL, 20'000'000ULL);
 }
 
+inline bool strategy_prefers_relaxed_candidate_clue_window(RequiredStrategy required) {
+    switch (required) {
+        case RequiredStrategy::Jellyfish:
+        case RequiredStrategy::WXYZWing:
+        case RequiredStrategy::FinnedSwordfishJellyfish:
+        case RequiredStrategy::XChain:
+        case RequiredStrategy::XYChain:
+        case RequiredStrategy::ALSXZ:
+        case RequiredStrategy::Medusa3D:
+        case RequiredStrategy::AIC:
+        case RequiredStrategy::GroupedAIC:
+        case RequiredStrategy::GroupedXCycle:
+        case RequiredStrategy::ContinuousNiceLoop:
+        case RequiredStrategy::ALSXYWing:
+        case RequiredStrategy::ALSChain:
+        case RequiredStrategy::SueDeCoq:
+        case RequiredStrategy::DeathBlossom:
+        case RequiredStrategy::FrankenFish:
+        case RequiredStrategy::MutantFish:
+        case RequiredStrategy::KrakenFish:
+        case RequiredStrategy::Squirmbag:
+        case RequiredStrategy::AlignedPairExclusion:
+        case RequiredStrategy::AlignedTripleExclusion:
+        case RequiredStrategy::ALSAIC:
+        case RequiredStrategy::RemotePairs:
+        case RequiredStrategy::SimpleColoring:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool strategy_prefers_relaxed_theoretical_clue_ceiling(RequiredStrategy required) {
+    switch (required) {
+        case RequiredStrategy::MSLS:
+        case RequiredStrategy::Exocet:
+        case RequiredStrategy::SeniorExocet:
+        case RequiredStrategy::SKLoop:
+        case RequiredStrategy::PatternOverlayMethod:
+        case RequiredStrategy::ForcingChains:
+        case RequiredStrategy::DynamicForcingChains:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool strategy_prefers_forcing_family_clue_ceiling(RequiredStrategy required) {
+    switch (required) {
+        case RequiredStrategy::ForcingChains:
+        case RequiredStrategy::DynamicForcingChains:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool strategy_prefers_loop_overlay_clue_ceiling(RequiredStrategy required) {
+    switch (required) {
+        case RequiredStrategy::SKLoop:
+        case RequiredStrategy::PatternOverlayMethod:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool strategy_prefers_preserved_core_seed_window(RequiredStrategy required) {
+    switch (required) {
+        case RequiredStrategy::Exocet:
+        case RequiredStrategy::SeniorExocet:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool strategy_prefers_sparse_p6_bottleneck_window(RequiredStrategy required) {
+    switch (required) {
+        case RequiredStrategy::SueDeCoq:
+        case RequiredStrategy::DeathBlossom:
+            return true;
+        default:
+            return false;
+    }
+}
+
 inline ClueRange resolve_auto_clue_range(int box_rows, int box_cols, int difficulty_level, RequiredStrategy required) {
     const int n = std::max(1, box_rows) * std::max(1, box_cols);
     const int nn = n * n;
@@ -638,6 +725,49 @@ inline ClueRange resolve_auto_clue_range(int box_rows, int box_cols, int difficu
             break;
     }
 
+    if (required != RequiredStrategy::ALSXZ && strategy_prefers_relaxed_candidate_clue_window(required)) {
+        const int relaxed_min = static_cast<int>(0.37 * static_cast<double>(nn));
+        const int relaxed_max = static_cast<int>(0.52 * static_cast<double>(nn));
+        min_clues = std::max(min_clues, relaxed_min);
+        max_clues = std::max(max_clues, relaxed_max);
+        max_clues = std::clamp(max_clues, min_clues, nn);
+    }
+
+    if (strategy_prefers_preserved_core_seed_window(required)) {
+        const int preserved_min = static_cast<int>(0.40 * static_cast<double>(nn));
+        const int preserved_max = static_cast<int>(0.60 * static_cast<double>(nn));
+        min_clues = std::max(min_clues, preserved_min);
+        max_clues = std::max(max_clues, preserved_max);
+        max_clues = std::clamp(max_clues, min_clues, nn);
+    }
+
+    if (strategy_prefers_sparse_p6_bottleneck_window(required)) {
+        const int sparse_min = static_cast<int>(0.31 * static_cast<double>(nn));
+        const int sparse_max = static_cast<int>(0.46 * static_cast<double>(nn));
+        min_clues = std::min(min_clues, sparse_min);
+        max_clues = std::min(std::max(max_clues, sparse_min), sparse_max);
+        min_clues = std::clamp(min_clues, std::max(4, n), nn);
+        max_clues = std::clamp(max_clues, min_clues, nn);
+    }
+
+    if (strategy_prefers_relaxed_theoretical_clue_ceiling(required)) {
+        const int relaxed_max = static_cast<int>(0.50 * static_cast<double>(nn));
+        max_clues = std::max(max_clues, relaxed_max);
+        max_clues = std::clamp(max_clues, min_clues, nn);
+    }
+
+    if (strategy_prefers_forcing_family_clue_ceiling(required)) {
+        const int forcing_max = static_cast<int>(0.62 * static_cast<double>(nn));
+        max_clues = std::max(max_clues, forcing_max);
+        max_clues = std::clamp(max_clues, min_clues, nn);
+    }
+
+    if (strategy_prefers_loop_overlay_clue_ceiling(required)) {
+        const int loop_overlay_max = static_cast<int>(0.62 * static_cast<double>(nn));
+        max_clues = std::max(max_clues, loop_overlay_max);
+        max_clues = std::clamp(max_clues, min_clues, nn);
+    }
+
     return {min_clues, max_clues};
 }
 
@@ -651,8 +781,8 @@ inline uint64_t strategy_smoke_seed(RequiredStrategy rs, StrategySmokeVariant va
 inline uint64_t strategy_smoke_attempt_cap(RequiredStrategy rs, StrategySmokeVariant variant) {
     const int lvl = std::max(1, strategy_min_level(rs));
     uint64_t attempts = 32ULL;
-    if (lvl >= 8) attempts = 192ULL;
-    else if (lvl >= 7) attempts = 160ULL;
+    if (lvl >= 8) attempts = 24000ULL;
+    else if (lvl >= 7) attempts = 16000ULL;
     else if (lvl >= 6) attempts = 128ULL;
     else if (lvl >= 4) attempts = 96ULL;
     else if (lvl >= 3) attempts = 64ULL;
@@ -664,8 +794,8 @@ inline uint64_t strategy_smoke_attempt_cap(RequiredStrategy rs, StrategySmokeVar
 
 inline uint64_t strategy_smoke_time_cap_s(RequiredStrategy rs) {
     const int lvl = std::max(1, strategy_min_level(rs));
-    if (lvl >= 8) return 120ULL;
-    if (lvl >= 7) return 60ULL;
+    if (lvl >= 8) return 240ULL;
+    if (lvl >= 7) return 180ULL;
     return 20ULL;
 }
 
